@@ -1,5 +1,9 @@
 # v0.5 검증 기록 · 2026-11-03
 
+- Windows 포터블 `CW_Handsoff_sys 0.5.0.exe` 패키징 완료. ASAR 소스 29개가 현재 작업 파일과 모두 일치하며 불필요한 SDK·실행 프로필·인증정보가 포함되지 않음을 확인. ProductName·FileDescription은 CW_Handsoff_sys, ProductVersion은 0.5.0.0. 실행 파일에서 추출한 아이콘도 승인된 민트 캐릭터임을 확인.
+- SHA-256: `a8690f2e8f8f23a3294518f822a7a0bf85feba330115e23b26bced09922e82e6`. 서명·GitHub Release 게시 없이 로컬 포터블 파일을 생성함.
+- 비공개 GitHub `ccw00325-spec/Hands_off_system` 생성 후 main 브랜치 푸시 성공. 최초 소스 커밋 `e7f0fe8ba5004491bed9996cea018685e9ca91cf`가 원격 main과 일치함을 API로 확인. 이 문서의 후속 검증 기록 커밋도 같은 저장소에 반영.
+
 - 사용자 승인한 마지막 민트 캐릭터 PNG를 원본 그대로 포함. Windows ICO의 16·24·32·48·64·128·256px 변환 완료.
 - 제품명·헤더·창 제목·신규 로그인 안내를 CW_Handsoff_sys로 변경. 기존 agent-control-tower 사용자 데이터 경로와 appId를 유지해 저장된 인증·프로젝트를 보존.
 - 자동 테스트 70개, 실제 Electron UI 검사 20개 통과. 실제 workflow dispatch/report에 따른 컨트롤→담당자·담당자→컨트롤 이동, 고정된 역할 이름, 검증 대기와 전체 완료 구분 포함.

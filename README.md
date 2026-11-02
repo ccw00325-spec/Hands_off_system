@@ -1,5 +1,7 @@
 # CW_Handsoff_sys
 
+저장소: [Hands_off_system](https://github.com/ccw00325-spec/Hands_off_system) · 비공개
+
 <img src="src/renderer/assets/mascot.png" width="120" alt="박스를 옮기는 민트색 작업 캐릭터">
 
 개인 PC에서 여러 AI 에이전트를 연결하고, 프로젝트 폴더 안에 생성물을 저장하는 Windows 데스크톱 앱입니다. **v0.5는 승인된 작업 캐릭터 로고·Windows 아이콘·실제 이벤트에 따른 전달 애니메이션을 적용했습니다. 프로젝트별 역할 변경·Gemini 연결·Cursor 로그인 복구를 유지합니다. 실제 공급자 연속 추론은 아직 미검증입니다.**
