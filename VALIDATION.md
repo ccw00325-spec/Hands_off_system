@@ -1,3 +1,16 @@
+# v0.6 검증 기록 · 2026-11-03
+
+최신 상세 결과: [실행 검증](docs/verification-0.6.md), [보안 검사](docs/security-0.6.md), [설계 근거](docs/design-research.md).
+
+- 84개 단위·통합 및 23개 실제 Electron UI 검사 통과.
+- 실제 Codex ChatGPT 두 세션으로 타이머 생성, 3회 자동 수정, 코어·브라우저 실행과 최종 검토 통과. 생성 폴더 삭제 확인.
+- 현재 OS 사용자의 Claude와 Cursor/Grok 인증으로 실제 최소 manifest 추론 성공. Gemini의 실제 제한 옵션·ACP 초기화와 미인증 처리를 확인했고 Google 신규 승인은 직접 수행해야 함.
+- 최종 Windows 0.6.0 패키지 소스 38개 일치, 인증·개발 도구 제외와 6개 강화 fuse 확인. 별도 빈 프로필의 renderer IPC 초기화 성공, 개발자 vault 복사 없음.
+- ClamAV 최종 파일·소스 검사 감염 0, Gitleaks 유출 0, production audit 취약점 0. 빌드 도구 중간 15개 경고·서명 미등록·OS 격리 부재는 보안 문서에 기록.
+- SHA256: `782e2e9680b46a70fbbc3227b6e29543ae9af89e5cd268b650794da1e76f8b55`.
+
+아래는 보존한 이전 버전의 검증 이력이다.
+
 # v0.5 검증 기록 · 2026-11-03
 
 - Windows 포터블 `CW_Handsoff_sys 0.5.0.exe` 패키징 완료. ASAR 소스 29개가 현재 작업 파일과 모두 일치하며 불필요한 SDK·실행 프로필·인증정보가 포함되지 않음을 확인. ProductName·FileDescription은 CW_Handsoff_sys, ProductVersion은 0.5.0.0. 실행 파일에서 추출한 아이콘도 승인된 민트 캐릭터임을 확인.

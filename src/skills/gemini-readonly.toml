@@ -1,0 +1,7 @@
+# CW_Handsoff_sys applies files through its own checked manifest writer.
+# Disable all Gemini-native tools; do not alter the user's saved CLI settings.
+[[rule]]
+toolName = "*"
+decision = "deny"
+priority = 999
+denyMessage = "Return the requested JSON manifest. Native tools are disabled in this workbench."

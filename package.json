@@ -1,6 +1,6 @@
 {
   "name": "cw-handsoff-sys",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Local multi-AI engineering workbench with role-based delegation.",
   "type": "module",
@@ -10,7 +10,10 @@
     "test": "node --test test/*.test.js",
     "check": "node scripts/check.mjs",
     "package:win": "electron-builder --win portable",
-    "icon:build": "electron scripts/build-icon.mjs"
+    "icon:build": "electron scripts/build-icon.mjs",
+    "test:desktop": "node scripts/smoke.mjs",
+    "test:timer:live": "node scripts/simulate-timer.mjs",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "dependencies": {
     "jose": "6.2.15"
@@ -33,6 +36,14 @@
     },
     "directories": {
       "output": "release"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
     }
   },
   "productName": "CW_Handsoff_sys"

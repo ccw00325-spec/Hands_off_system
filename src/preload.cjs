@@ -1,22 +1,65 @@
-const { contextBridge, ipcRenderer } = require('electron');
-const call = channel => (...args) => ipcRenderer.invoke(`tower:${channel}`, ...args);
-contextBridge.exposeInMainWorld('tower', Object.freeze({
-  status: call('status'), login: call('login'), cancelLogin: call('cancel-login'),
-  selectAccount: call('select-account'), signOut: call('sign-out'), claudeLogin: call('claude-login'),
-  grokLogin: call('grok-login'),
-  grokModels:call('grok-models'),selectGrokModel:call('select-grok-model'),
-  geminiLogin:call('gemini-login'),installGemini:call('install-gemini'),geminiModels:call('gemini-models'),selectGeminiModel:call('select-gemini-model'),roles:call('roles'),setRoles:call('set-roles'),
-  restoreConnections:call('restore-connections'),activity:call('activity'),usage:call('usage'),refreshUsage:call('refresh-usage'),pollUsage:call('poll-usage'),
-  browserSettings:call('browser-settings'),setBrowser:call('set-browser'),loginBrowser:call('login-browser'),loginCode:call('login-code'),cancelCliLogin:call('cancel-cli-login'),
-  saveKey: call('save-key'), removeKey: call('remove-key'), models: call('models'),
-  projects: call('projects'), createProject: call('create-project'), renameProject: call('rename-project'), selectProject: call('select-project'),
-  generateImage: call('generate-image'), latestImage: call('latest-image'), exportImage: call('export-image'), openLink: call('open-link'),
-  chooseFolder: call('choose-folder'), grantFolder: call('grant-folder'), revokeFolder: call('revoke-folder'),
-  folderTree: call('folder-tree'), readFile: call('read-file'), openFolder: call('open-folder'),
-  startWorkflow: call('start-workflow'), workflow: call('workflow'), stopWorkflow: call('stop-workflow'),
-  onEvent(callback) {
-    const listener = (_event, value) => callback(value);
-    ipcRenderer.on('tower:event', listener);
-    return () => ipcRenderer.removeListener('tower:event', listener);
-  }
-}));
+const { contextBridge, ipcRenderer } = require("electron");
+const call =
+  (channel) =>
+  (...args) =>
+    ipcRenderer.invoke(`tower:${channel}`, ...args);
+contextBridge.exposeInMainWorld(
+  "tower",
+  Object.freeze({
+    status: call("status"),
+    login: call("login"),
+    cancelLogin: call("cancel-login"),
+    selectAccount: call("select-account"),
+    signOut: call("sign-out"),
+    claudeLogin: call("claude-login"),
+    grokLogin: call("grok-login"),
+    grokModels: call("grok-models"),
+    selectGrokModel: call("select-grok-model"),
+    codexLogin: call("codex-login"),
+    setGptSource: call("set-gpt-source"),
+    saveGptModel: call("save-gpt-model"),
+    team: call("team"),
+    setTeam: call("set-team"),
+    geminiLogin: call("gemini-login"),
+    installGemini: call("install-gemini"),
+    geminiModels: call("gemini-models"),
+    selectGeminiModel: call("select-gemini-model"),
+    roles: call("roles"),
+    setRoles: call("set-roles"),
+    restoreConnections: call("restore-connections"),
+    activity: call("activity"),
+    usage: call("usage"),
+    refreshUsage: call("refresh-usage"),
+    pollUsage: call("poll-usage"),
+    browserSettings: call("browser-settings"),
+    setBrowser: call("set-browser"),
+    loginBrowser: call("login-browser"),
+    loginCode: call("login-code"),
+    cancelCliLogin: call("cancel-cli-login"),
+    saveKey: call("save-key"),
+    removeKey: call("remove-key"),
+    models: call("models"),
+    projects: call("projects"),
+    createProject: call("create-project"),
+    renameProject: call("rename-project"),
+    selectProject: call("select-project"),
+    generateImage: call("generate-image"),
+    latestImage: call("latest-image"),
+    exportImage: call("export-image"),
+    openLink: call("open-link"),
+    chooseFolder: call("choose-folder"),
+    grantFolder: call("grant-folder"),
+    revokeFolder: call("revoke-folder"),
+    folderTree: call("folder-tree"),
+    readFile: call("read-file"),
+    openFolder: call("open-folder"),
+    startWorkflow: call("start-workflow"),
+    workflow: call("workflow"),
+    stopWorkflow: call("stop-workflow"),
+    onEvent(callback) {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on("tower:event", listener);
+      return () => ipcRenderer.removeListener("tower:event", listener);
+    },
+  }),
+);
