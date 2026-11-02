@@ -1,0 +1,37 @@
+# 공식 사용 한도 표시 · USAGE-001 · v0.3 · 2026-11-02
+
+- [x] 상단 한도 영역·상세 창 — 결정 ✅ / 구현 ✅ / 검증 ✅: UI 검사.
+- [x] Claude·Codex 실제 메타데이터 조회 — 결정 ✅ / 구현 ✅ / 검증 ✅: 현재 PC에서 숫자 한도 확인.
+- [ ] GPT 직접 로그인·Grok 자동 잔량 — 결정 ✅ / 구현 미지원 / 검증 확인 불가: 공식 조회 경로 미확인; 페이지 링크 제공.
+
+원문: “각 부분에 /usage 로 남은 토큰량 … 제일 상단에 Token … % … 실시간”. D-U01: 상단 표시. 기술 조사 결과 토큰 개수와 구독 한도 백분율이 다르므로 UI에 **Token / 사용 한도**, 상세에 구독 잔여 비율임을 명시한다. 없는 값을 추정하지 않는다. 모든 공급자의 자동 조회를 가능하다고 주장하지 않는다.
+
+Context: 구조화된 공식 값 있음·없음·미지원·조회 실패·CLI 계정 변경. Trigger: 앱 시작, 전경 60초 갱신, 수동 갱신, Codex의 공식 한도 업데이트. 60초는 현재 구현에서 관찰된 갱신 간격이며 “공급자 전체가 즉시 실시간”이라고 표현하지 않는다. 활동 기록은 백그라운드 갱신과 분리된다.
+
+| 출처 | 처리 |
+| --- | --- |
+| Claude usage_report.rate_limits.limits | 공식 percent 사용량을 100에서 빼 잔여 계산, 실제 서버 창별 행 보존 |
+| Codex rateLimits.primary/secondary | 공식 usedPercent로 잔여 계산, 별도 계정 참고임을 표시 |
+| GPT·Grok 숫자 미확인 | 조회 미지원·공식 페이지 |
+| null·잘못된 범위·오류 | 숫자를 표시하지 않음; 0 사용으로 해석하지 않음 |
+| 자연어 응답·컨텍스트 보고 | 구독 한도로 파싱하지 않음 |
+
+```gherkin
+@confirmed
+Feature: 공식 사용 한도
+  Scenario: S-U01 확인된 한도 표시
+    Given 공급자가 구조화된 사용 한도 비율을 제공했다
+    When 앱이 한도를 갱신한다
+    Then 상단에 적용 중인 창의 잔여 비율을 표시한다
+    And 상세에 집계창과 초기화 시각을 제공한다
+
+@observed
+Feature: 값 미제공 처리
+  Scenario: S-U02 없는 한도를 추정하지 않음
+    Given 공식 자동 조회에서 숫자를 받지 못했다
+    When 상단을 표시한다
+    Then 100%를 만들어 표시하지 않는다
+    And 조회 상태와 공식 페이지 링크를 제공한다
+```
+
+구현: `UsageService`, `readClaudeUsage`, `CodexUsage`, renderer tokenbar와 usage-dialog. 검증: `test/usage.test.js`, `scripts/check-live-metadata.mjs`, UI 검사. 실제 Claude·Codex 값은 시점별로 바뀌므로 문서에 고정하지 않는다. 구독 한도는 토큰 개수나 컨텍스트 크기가 아니다. Codex와 앱 GPT 직접 로그인은 같은 계정이라고 가정하지 않는다. 공식 `/usage`는 로컬 명령으로 모델 턴과 비용 0을 확인했고, 다른 임의 프롬프트로 대체하지 않는다. Grok·Cursor의 잔량은 서로 빌링 출처가 다르므로 혼합하지 않는다. 관련 기능: `persistent_login_fun.md`.

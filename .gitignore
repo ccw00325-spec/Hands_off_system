@@ -1,0 +1,11 @@
+node_modules/
+release/
+artifacts/
+.runtime/
+.env
+.env.*
+*.log
+*-credentials*
+*.enc
+
+.tools/
