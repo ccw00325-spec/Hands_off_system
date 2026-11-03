@@ -4,6 +4,9 @@ import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 const artifacts = resolve("artifacts");
+const releaseVersion = JSON.parse(
+  await readFile("package.json", "utf8"),
+).version;
 await mkdir(artifacts, { recursive: true });
 const profile = join(artifacts, "smoke-v07-profile-" + Date.now()),
   root = join(artifacts, "smoke-v07-workspace-" + Date.now());
@@ -25,6 +28,10 @@ async function boot() {
 }
 try {
   let page = await boot();
+  assert.equal(
+    await page.locator("#app-version").innerText(),
+    "LOCAL / " + releaseVersion,
+  );
   await page.locator("#settings-dialog[open]").waitFor();
   assert.equal(await page.locator("#allow-execution").isChecked(), false);
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
@@ -119,10 +126,18 @@ try {
     controllerHeight: document.querySelector(".planner").getBoundingClientRect()
       .height,
   }));
-  assert.ok(panelOrder.controller > panelOrder.worker);
+  assert.ok(panelOrder.controller < panelOrder.worker);
+  assert.equal(
+    await page.evaluate(() =>
+      document
+        .querySelector(".planner")
+        .nextElementSibling.classList.contains("dispatch"),
+    ),
+    true,
+  );
   assert.ok(panelOrder.controllerHeight > panelOrder.workerHeight);
   checks.push(
-    "Workers are above a larger control tower; central folder/files and execution fields are removed",
+    "Control tower is first and largest, then downward dispatch and workers; central execution fields remain in settings",
   );
   await application.evaluate(
     (_electron, url) => {
@@ -557,7 +572,14 @@ try {
   checks.push(
     "2/4 panel resizing retains multiple roles and independent chat composers",
   );
-  await page.screenshot({ path: join(artifacts, "v07-workers.png") });
+  await page.locator(".planner").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: join(artifacts, "workbench-controller-top.png"),
+  });
+  await page.locator(".workers").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: join(artifacts, "workbench-workers-below.png"),
+  });
   await page.locator(".planner").scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(artifacts, "v07-controller.png") });
   for (const width of [1920, 1440, 900, 768, 414, 375, 320]) {

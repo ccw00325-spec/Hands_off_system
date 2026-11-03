@@ -1,6 +1,6 @@
 # Agent Control Tower
 
-v0.7 current layout: [terminal conversations and QA](docs/design-0.7.md). Workers are above the larger control tower. Left folders/conversations and right progress replace the earlier file-centric layout. Teams support 2–4 panels and multiple roles per panel. Descriptions below record the earlier design baseline.
+Current release baseline: **0.1.0**, reset at the user's request. The larger control tower is first and above the workers, with downward dispatch between them. Left folders/conversations and right progress remain. Teams support 2–4 panels and multiple roles per panel. See [current release/layout policy](docs/release-policy.md); [v0.7 notes](docs/design-0.7.md) record the superseded layout.
 
 Use the user's approved desktop layout: black engineering workspace; planning agent full-width above two implementation agents; dispatch strip between them; projects and connection settings upper-right. Keep future orchestration clearly unavailable until implemented.
 

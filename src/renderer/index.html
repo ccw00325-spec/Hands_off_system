@@ -23,7 +23,8 @@
           width="36"
           height="36"
         />
-        CW_Handsoff_sys <span class="version">LOCAL / 0.7</span></a
+        CW_Handsoff_sys
+        <span class="version" id="app-version">LOCAL / —</span></a
       >
       <div class="top-actions">
         <button id="toggle-sidebar" class="subtle" aria-expanded="true">
@@ -139,6 +140,103 @@
             </div>
             <button id="open-roles">AI 역할 변경 ⇄</button>
           </section>
+          <section class="terminal planner" aria-labelledby="planner-heading">
+            <header class="panel-heading">
+              <div class="agent-name">
+                <span class="agent-icon mint">G</span>
+                <div>
+                  <h2 id="planner-heading">
+                    <strong id="planner-provider">GPT</strong>
+                    <span>컨트롤 타워</span>
+                  </h2>
+                  <p>요구사항 · UX 설계 · 기능 명세 · UI 시안 지시</p>
+                </div>
+              </div>
+              <div class="panel-actions">
+                <button class="text-button change-role" data-role="gpt">
+                  AI 변경 ⇄</button
+                ><span class="status-pill" id="gpt-status">미연결</span
+                ><button class="subtle connect-shortcut">연결 설정 ↗</button>
+              </div>
+            </header>
+            <div class="terminal-body">
+              <p class="log-line">
+                <span class="log-label">SYSTEM</span> 명세 전달 → 기능별 완료
+                보고 → 컨트롤 타워 재검토 → 담당 AI 수정 → 재검증
+              </p>
+              <div class="empty-agent" id="planner-empty">
+                <span class="crosshair">＋</span>
+                <h3>이 폴더에서 함께 만듭니다.</h3>
+                <p>
+                  작업 폴더와 AI 계정을 연결하세요.<br />컨트롤 타워가 fun으로
+                  명세를 정리하고, 작업 보고를 받아 수정까지 조율합니다.
+                </p>
+                <button class="primary connect-shortcut">
+                  AI 연결 설정 <span>↗</span>
+                </button>
+              </div>
+              <div
+                id="planner-events"
+                class="event-list"
+                hidden=""
+                aria-live="polite"
+              ></div>
+              <div
+                id="gpt-chat"
+                class="panel-chat-history"
+                aria-live="polite"
+              ></div>
+              <pre id="gpt-progress" class="live-output" hidden=""></pre>
+            </div>
+            <div class="composer">
+              <label class="sr-only" for="planner-input"
+                >컨트롤 타워에게 요청</label
+              ><textarea
+                id="planner-input"
+                rows="3"
+                maxlength="16000"
+                placeholder="만들고 싶은 것을 설명하세요. 예: 시작·일시정지·초기화가 있는 타이머 앱을 만들어줘."
+              ></textarea>
+              <div class="composer-bottom">
+                <select id="controller-mode" aria-label="컨트롤 대화 모드">
+                  <option value="work">작업 요청</option>
+                  <option value="question">질문만</option>
+                </select>
+                <span>Enter 전송 · Shift+Enter 줄바꿈</span>
+                <div class="model-controls">
+                  <select id="gpt-model" aria-label="GPT 실행 모델">
+                    <option value="">GPT 모델 선택</option></select
+                  ><button id="model-button" class="model-button">
+                    목록 불러오기 ▾
+                  </button>
+                </div>
+                <div class="run-actions controller-send-actions">
+                  <button id="start-workflow" class="primary">
+                    작업 시작 →</button
+                  ><button id="stop-workflow" hidden="">작업 중지</button
+                  ><button id="stop-controller-chat" type="button" hidden>
+                    응답 중지
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p id="run-readiness" class="run-readiness">
+              폴더와 AI 연결을 확인한 뒤 시작할 수 있습니다. 검증 명령이 없으면
+              전체 완료로 표시하지 않습니다.
+            </p>
+          </section>
+
+          <div class="dispatch" aria-label="작업 전달 흐름">
+            <span class="dispatch-tag">DISPATCH ↓</span
+            ><span>버전 명세 + UI 기준</span
+            ><span class="dispatch-arrow">↓</span
+            ><span>완성된 기능부터 UI 연결</span
+            ><span class="dispatch-pending" id="round-indicator"
+              >수정 라운드 —</span
+            >
+          </div>
+
           <div class="workers">
             <section
               class="terminal worker"
@@ -368,103 +466,6 @@
               </div>
             </section>
           </div>
-          <div class="dispatch" aria-label="작업 전달 흐름">
-            <span class="dispatch-tag">DISPATCH ↑</span
-            ><span>버전 명세 + UI 기준</span
-            ><span class="dispatch-arrow">↑</span
-            ><span>완성된 기능부터 UI 연결</span
-            ><span class="dispatch-pending" id="round-indicator"
-              >수정 라운드 —</span
-            >
-          </div>
-
-          <section class="terminal planner" aria-labelledby="planner-heading">
-            <header class="panel-heading">
-              <div class="agent-name">
-                <span class="agent-icon mint">G</span>
-                <div>
-                  <h2 id="planner-heading">
-                    <strong id="planner-provider">GPT</strong>
-                    <span>컨트롤 타워</span>
-                  </h2>
-                  <p>요구사항 · UX 설계 · 기능 명세 · UI 시안 지시</p>
-                </div>
-              </div>
-              <div class="panel-actions">
-                <button class="text-button change-role" data-role="gpt">
-                  AI 변경 ⇄</button
-                ><span class="status-pill" id="gpt-status">미연결</span
-                ><button class="subtle connect-shortcut">연결 설정 ↗</button>
-              </div>
-            </header>
-            <div class="terminal-body">
-              <p class="log-line">
-                <span class="log-label">SYSTEM</span> 명세 전달 → 기능별 완료
-                보고 → 컨트롤 타워 재검토 → 담당 AI 수정 → 재검증
-              </p>
-              <div class="empty-agent" id="planner-empty">
-                <span class="crosshair">＋</span>
-                <h3>이 폴더에서 함께 만듭니다.</h3>
-                <p>
-                  작업 폴더와 AI 계정을 연결하세요.<br />컨트롤 타워가 fun으로
-                  명세를 정리하고, 작업 보고를 받아 수정까지 조율합니다.
-                </p>
-                <button class="primary connect-shortcut">
-                  AI 연결 설정 <span>↗</span>
-                </button>
-              </div>
-              <div
-                id="planner-events"
-                class="event-list"
-                hidden=""
-                aria-live="polite"
-              ></div>
-              <div
-                id="gpt-chat"
-                class="panel-chat-history"
-                aria-live="polite"
-              ></div>
-              <pre id="gpt-progress" class="live-output" hidden=""></pre>
-            </div>
-            <div class="composer">
-              <label class="sr-only" for="planner-input"
-                >컨트롤 타워에게 요청</label
-              ><textarea
-                id="planner-input"
-                rows="3"
-                maxlength="16000"
-                placeholder="만들고 싶은 것을 설명하세요. 예: 시작·일시정지·초기화가 있는 타이머 앱을 만들어줘."
-              ></textarea>
-              <div class="composer-bottom">
-                <select id="controller-mode" aria-label="컨트롤 대화 모드">
-                  <option value="work">작업 요청</option>
-                  <option value="question">질문만</option>
-                </select>
-                <span>Enter 전송 · Shift+Enter 줄바꿈</span>
-                <div class="model-controls">
-                  <select id="gpt-model" aria-label="GPT 실행 모델">
-                    <option value="">GPT 모델 선택</option></select
-                  ><button id="model-button" class="model-button">
-                    목록 불러오기 ▾
-                  </button>
-                </div>
-                <div class="run-actions controller-send-actions">
-                  <button id="start-workflow" class="primary">
-                    작업 시작 →</button
-                  ><button id="stop-workflow" hidden="">작업 중지</button
-                  ><button id="stop-controller-chat" type="button" hidden>
-                    응답 중지
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <p id="run-readiness" class="run-readiness">
-              폴더와 AI 연결을 확인한 뒤 시작할 수 있습니다. 검증 명령이 없으면
-              전체 완료로 표시하지 않습니다.
-            </p>
-          </section>
-
           <div id="courier-layer" aria-hidden="true">
             <img
               id="courier"

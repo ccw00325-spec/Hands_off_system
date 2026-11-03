@@ -187,6 +187,7 @@ function renderImage() {
 async function refreshStatus() {
   const status = await call(api.status());
   connection = status;
+  $("#app-version").textContent = `LOCAL / ${status.appVersion}`;
   const account = status.accounts.find((item) => item.active);
   const usable = account?.planEnabled === true;
   const gptUsable = status.gpt.connected;

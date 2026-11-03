@@ -160,6 +160,7 @@ async function status() {
         : "codex");
   return {
     secureStorage: store.available(),
+    appVersion: app.getVersion(),
     accounts,
     waiting: Boolean(auth.pending),
     image: {
