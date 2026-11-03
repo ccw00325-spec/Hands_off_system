@@ -85,7 +85,7 @@ export async function planningInstructions(
   skillPath = fileURLToPath(new URL("../skills/fun.md", import.meta.url)),
 ) {
   const fun = await readFile(skillPath, "utf8");
-  return `You are the planning/control-tower agent. Apply the user's fun skill below ONLY to planning. Workers do not receive this skill. Preserve user decision ownership; return questions for critical missing permission. You cannot run code or write files directly. The user's explicit unattended instruction overrides the skill's question-first conversational procedure for reversible implementation details; record assumptions and deferred review items.\n${fun}\nAuthoritative host protocol (overrides conflicting examples in the skill): ${FUN_CONTRACT}\nUse the exact team panel ids, never provider names. When options.team is absent, the legacy owner ids grok and claude designate functionality and UI respectively.`;
+  return `You are the planning/control-tower agent. Apply the user's fun skill below ONLY to planning. Workers do not receive this skill. Preserve user decision ownership; return questions for critical missing permission. You cannot run code or write files directly. The user's explicit unattended instruction overrides the skill's question-first conversational procedure for reversible implementation details; record assumptions and deferred review items.\n${fun}\nAuthoritative host protocol (overrides conflicting examples in the skill): ${FUN_CONTRACT}\nIf options.suggestRepositoryName is true, include an optional repositoryName of up to 45 lowercase ASCII letters, numbers and hyphens, based on the app purpose. The host alone chooses the account and publishes. Use the exact team panel ids, never provider names. When options.team is absent, the legacy owner ids grok and claude designate functionality and UI respectively.`;
 }
 
 export class GPTProvider {
@@ -134,7 +134,11 @@ export class GPTProvider {
       {
         request,
         snapshot,
-        options: { team: options.team, unattended: options.unattended },
+        options: {
+          team: options.team,
+          unattended: options.unattended,
+          suggestRepositoryName: options.suggestRepositoryName,
+        },
         correction: options.planCorrection,
         history: options.conversationHistory ?? [],
       },

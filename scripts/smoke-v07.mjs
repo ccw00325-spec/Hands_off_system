@@ -43,14 +43,24 @@ try {
   await page.locator("#terminal-font-size").selectOption("14");
   await page.locator("#save-settings").click();
   await page.locator("#settings-dialog").waitFor({ state: "hidden" });
-  assert.equal(await page.locator("#startup-dialog").evaluate((dialog) => dialog.open), false);
-  assert.equal(await page.locator("#startup-progress").evaluate((progress) => progress.value), 3);
+  assert.equal(
+    await page.locator("#startup-dialog").evaluate((dialog) => dialog.open),
+    false,
+  );
+  assert.equal(
+    await page
+      .locator("#startup-progress")
+      .evaluate((progress) => progress.value),
+    3,
+  );
   await page.locator("#open-guide").click();
   await page.locator("#guide-dialog[open]").waitFor();
   assert.equal(await page.locator("#guide-dialog li").count(), 3);
   await page.keyboard.press("Escape");
   await page.locator("#guide-dialog").waitFor({ state: "hidden" });
-  checks.push("Startup reaches the last local initialization stage; the guide opens and closes by keyboard");
+  checks.push(
+    "Startup reaches the last local initialization stage; the guide opens and closes by keyboard",
+  );
   assert.equal(
     (await page.evaluate(() => window.tower.preferences())).value
       .terminalFontSize,
@@ -120,6 +130,41 @@ try {
   await page.locator("#sidebar-projects .conversation-row.selected").waitFor();
   let data = (await page.evaluate(() => window.tower.projects())).value;
   const projectId = data.activeId;
+  await application.evaluate(
+    (_electron, url) => {
+      const path = process.getBuiltinModule("url").fileURLToPath(url);
+      const { AuxiliaryServices } = process
+        .getBuiltinModule("module")
+        .createRequire(path)(path);
+      AuxiliaryServices.prototype.status = async () => ({
+        accounts: {
+          github: { installed: true, account: "fixture-user" },
+          vercel: { installed: true, account: null },
+          supabase: { installed: false, account: null },
+        },
+        config: null,
+        name: "fixture-timer",
+        result: null,
+      });
+    },
+    pathToFileURL(resolve("src/core/services.js")).href,
+  );
+  await page.locator("#open-services").click();
+  await page.locator("#services-dialog[open]").waitFor();
+  await page
+    .locator("#service-github")
+    .filter({ hasText: "fixture-user" })
+    .waitFor();
+  assert.equal(await page.locator("#service-auto-github").isChecked(), false);
+  assert.equal(await page.locator("#service-production").isChecked(), false);
+  assert.equal(
+    await page.locator('[data-service-login="supabase"]').isDisabled(),
+    true,
+  );
+  await page.locator("#close-services").click();
+  checks.push(
+    "Auxiliary services show CLI account status and project-specific opt-in defaults",
+  );
   checks.push(
     "Project is created atomically after folder consent; left folder tree contains the selected conversation",
   );

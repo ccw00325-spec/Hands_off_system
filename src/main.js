@@ -33,6 +33,7 @@ import { validateModelId } from "./core/team.js";
 import { Preferences } from "./core/preferences.js";
 import { Conversations } from "./core/conversations.js";
 import { AgentChat } from "./core/agent-chat.js";
+import { AuxiliaryServices } from "./core/services.js";
 
 const directory = dirname(fileURLToPath(import.meta.url));
 app.setName("CW_Handsoff_sys");
@@ -63,7 +64,7 @@ let window,
   persistentSession,
   browser,
   usage;
-let preferences, conversations, agentChat;
+let preferences, conversations, agentChat, auxiliary;
 let restorePromise;
 let gptRestoreState = null;
 const once = new Set();
@@ -114,7 +115,11 @@ async function exclusive(key, action) {
 async function executionOptions(id) {
   const current = await status();
   const settings = await preferences.get();
+  const delivery = projects.find(await projects.list(), id).delivery;
   return {
+    deliveryRevision: delivery?.revision,
+    suggestRepositoryName:
+      delivery?.github === true && !delivery.name && !delivery.resolvedName,
     maxRepairRounds: settings.maxRepairRounds,
     validationScript: settings.validationScript,
     allowExecution: settings.allowExecution,
@@ -280,6 +285,7 @@ else {
       claude = new ClaudeConnection(notify);
       projects = new Projects(store);
       workspace = new Workspace(projects);
+      auxiliary = new AuxiliaryServices(store, projects, workspace, notify);
       preferences = new Preferences(store);
       conversations = new Conversations(store, projects);
       grok = new CursorProvider(
@@ -319,6 +325,8 @@ else {
           notify(event);
           if (event.type === "workflow")
             void agentChat?.finishedRun(event.state).catch(() => {});
+          if (event.type === "workflow" && event.state.status === "completed")
+            void auxiliary.publish(event.state).catch(() => {});
         },
         async (context) =>
           validateProject(workspace, {
@@ -441,6 +449,23 @@ else {
         exclusive("key", () => images.removeKey()),
       );
       handle("tower:projects", () => projects.list());
+      handle("tower:services-status", (id) => auxiliary.status(id));
+      handle("tower:services-login", (service) => auxiliary.login(service));
+      handle("tower:services-save", (id, input) =>
+        exclusive(`delivery:${id}`, () => auxiliary.save(id, input)),
+      );
+      handle("tower:services-retry", async (id) => {
+        const state = await workflow.current(id);
+        if (state?.status !== "completed" || !state.options.deliveryRevision)
+          throw new Error("자동 릴리스가 설정된 완료 작업이 필요합니다.");
+        const config = projects.find(await projects.list(), id).delivery;
+        if (config?.revision !== state.options.deliveryRevision)
+          throw new Error(
+            "설정이 변경됐습니다. 새 작업을 완료한 뒤 배포하세요.",
+          );
+        await auxiliary.publish(state, true);
+        return true;
+      });
       handle("tower:preferences", () => preferences.get());
       handle("tower:save-preferences", (value) =>
         exclusive("preferences", async () => {

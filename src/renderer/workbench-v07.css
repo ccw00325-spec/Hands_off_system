@@ -22,6 +22,40 @@ body {
 .top-actions {
   gap: 8px;
 }
+#open-services {
+  margin-right: auto;
+  white-space: nowrap;
+}
+#services-dialog {
+  width: 570px;
+}
+.services-content {
+  padding: 16px 24px 24px;
+}
+.services-accounts,
+#services-form {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0;
+}
+.services-accounts > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.services-accounts span,
+#services-result {
+  overflow-wrap: anywhere;
+}
+#services-form > label:not(.check-label) {
+  display: grid;
+  gap: 4px;
+}
+#services-form input:not([type="checkbox"]) {
+  min-width: 0;
+  width: 100%;
+}
 #open-guide {
   display: inline-flex;
   align-items: center;

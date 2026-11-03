@@ -457,6 +457,12 @@ export class Workflow {
       return;
     }
     state.spec = plan.spec;
+    if (
+      state.options.suggestRepositoryName &&
+      typeof plan.repositoryName === "string" &&
+      /^[a-z0-9][a-z0-9-]{0,44}$/.test(plan.repositoryName)
+    )
+      state.repositoryName = plan.repositoryName;
     state.requirements = plan.requirements ?? [];
     state.decisions = plan.decisions ?? [];
     state.reviewItems = plan.reviewItems ?? [];

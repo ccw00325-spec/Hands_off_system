@@ -39,6 +39,9 @@
         CW_Handsoff_sys
         <span class="version" id="app-version">LOCAL / —</span></a
       >
+      <button id="open-services" class="subtle" aria-haspopup="dialog">
+        보조 서비스 연결
+      </button>
       <div class="top-actions">
         <button id="open-guide" class="subtle" aria-haspopup="dialog">
           <span class="guide-icon" aria-hidden="true">?</span> Hands off 가이드
@@ -1109,6 +1112,85 @@
           </button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="services-dialog" aria-labelledby="services-title">
+      <header class="dialog-heading">
+        <div>
+          <h2 id="services-title">보조 서비스 연결</h2>
+          <p id="services-project" class="secondary"></p>
+        </div>
+        <button
+          id="close-services"
+          class="icon-button"
+          type="button"
+          aria-label="보조 서비스 닫기"
+        >
+          ×
+        </button>
+      </header>
+      <div class="services-content">
+        <p class="secondary">
+          공식 CLI 로그인으로 연결합니다. 로그인 창에서 완료한 뒤 연결 상태를
+          새로 확인하세요.
+        </p>
+        <div class="services-accounts">
+          <div>
+            <strong>GitHub</strong><span id="service-github">확인 전</span
+            ><button data-service-login="github">로그인</button>
+          </div>
+          <div>
+            <strong>Vercel</strong><span id="service-vercel">확인 전</span
+            ><button data-service-login="vercel">로그인</button>
+          </div>
+          <div>
+            <strong>Supabase</strong><span id="service-supabase">확인 전</span
+            ><button data-service-login="supabase">로그인</button>
+          </div>
+        </div>
+        <button id="refresh-services" class="subtle">
+          연결 상태 다시 확인
+        </button>
+        <p class="secondary">
+          설정한 프로젝트에서 실행 검증과 AI 검토를 모두 통과하면 컨트롤 타워가
+          릴리스를 시작합니다. 검증된 소스 파일을 선택한 서비스로 전송합니다.
+        </p>
+        <form id="services-form">
+          <label class="check-label"
+            ><input id="service-auto-github" type="checkbox" /> 비공개 GitHub
+            저장소 생성·커밋·푸시</label
+          >
+          <label
+            >저장소 이름 <input id="service-repo-name" maxlength="63"
+          /></label>
+          <label class="check-label"
+            ><input id="service-auto-vercel" type="checkbox" /> Vercel 자동
+            배포</label
+          >
+          <label
+            >Vercel 계정 또는 팀 슬러그
+            <input id="service-scope" maxlength="63"
+          /></label>
+          <label
+            >Vercel 프로젝트 이름 <input id="service-target" maxlength="63"
+          /></label>
+          <label class="check-label"
+            ><input id="service-production" type="checkbox" /> 운영 배포 사용
+            (기본값은 미리보기)</label
+          >
+          <p class="secondary">
+            Supabase는 계정 연결과 상태 확인을 제공합니다. 원격 DB 변경은
+            Supabase CLI에서 별도로 실행합니다.
+          </p>
+          <button id="save-services" class="primary" type="submit">
+            이 프로젝트에 저장
+          </button>
+        </form>
+        <p id="services-result" role="status"></p>
+        <button id="retry-delivery" class="subtle" hidden>
+          릴리스 다시 시도
+        </button>
+      </div>
     </dialog>
 
     <dialog id="guide-dialog" aria-labelledby="guide-title">

@@ -585,6 +585,17 @@ async function initialize() {
     );
   } else {
     api.onEvent(async (event) => {
+      if (
+        event.type === "delivery" &&
+        event.projectId === projectData?.activeId
+      ) {
+        renderDelivery(event.result);
+        toast(
+          event.result.message,
+          event.result.status === "failed" ? "error" : "",
+        );
+        return;
+      }
       if (event.type === "chat-updated") {
         if (event.projectId === projectData?.activeId) {
           for (const id of SLOT_IDS) pendingChats.delete(id);
@@ -1873,4 +1884,96 @@ $("#open-guide").addEventListener("click", () =>
   $("#guide-dialog").showModal(),
 );
 $("#close-guide").addEventListener("click", () => $("#guide-dialog").close());
+function renderDelivery(result) {
+  $("#services-result").textContent = result
+    ? [result.message, result.github?.url, result.vercel?.url]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  $("#retry-delivery").hidden =
+    !result || !["failed", "running"].includes(result.status);
+}
+
+let servicesProjectId;
+async function loadServices() {
+  const id = servicesProjectId;
+  const { accounts, config, name, result } = await call(api.servicesStatus(id));
+  if (id !== servicesProjectId) return;
+  for (const [service, status] of Object.entries(accounts)) {
+    $(`#service-${service}`).textContent =
+      status.account ??
+      (status.installed ? "로그인 필요" : "공식 CLI 설치 필요");
+    $(`[data-service-login="${service}"]`).disabled = !status.installed;
+  }
+  $("#service-auto-github").checked = config?.github ?? false;
+  $("#service-auto-vercel").checked = config?.vercel ?? false;
+  $("#service-repo-name").value = config?.name || "";
+  $("#service-repo-name").placeholder =
+    config?.resolvedName || "AI가 이름 제안 · 예: " + name;
+  $("#service-scope").value = config?.scope || accounts.vercel.account || "";
+  $("#service-target").value = config?.target || name;
+  $("#service-production").checked = config?.production ?? false;
+  renderDelivery(result);
+}
+
+$("#open-services").addEventListener("click", () => {
+  const project = projectData?.items.find(
+    (row) => row.id === projectData.activeId,
+  );
+  if (!project) return;
+  servicesProjectId = project.id;
+  $("#services-project").textContent = project.title;
+  $("#save-services").disabled = true;
+  $("#services-dialog").showModal();
+  $("#refresh-services").click();
+});
+$("#close-services").addEventListener("click", () =>
+  $("#services-dialog").close(),
+);
+$("#refresh-services").addEventListener("click", () =>
+  busy($("#refresh-services"), "확인 중…", async () => {
+    $("#save-services").disabled = true;
+    await loadServices();
+    $("#save-services").disabled = false;
+  }),
+);
+for (const button of document.querySelectorAll("[data-service-login]")) {
+  button.addEventListener("click", () =>
+    busy(button, "여는 중…", async () => {
+      await call(api.servicesLogin(button.dataset.serviceLogin));
+      $("#services-result").textContent =
+        "로그인 창에서 완료한 뒤 연결 상태를 다시 확인하세요.";
+    }),
+  );
+}
+$("#services-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void busy($("#save-services"), "저장 중…", async () => {
+    try {
+      await call(
+        api.servicesSave(servicesProjectId, {
+          github: $("#service-auto-github").checked,
+          vercel: $("#service-auto-vercel").checked,
+          name: $("#service-repo-name").value,
+          scope: $("#service-scope").value,
+          target: $("#service-target").value,
+          production: $("#service-production").checked,
+        }),
+      );
+      $("#services-result").textContent =
+        "저장했습니다. 다음 작업부터 적용합니다.";
+    } catch (error) {
+      $("#services-result").textContent = error.message;
+    }
+  });
+});
+$("#retry-delivery").addEventListener("click", () =>
+  busy($("#retry-delivery"), "다시 시도 중…", async () => {
+    try {
+      await call(api.servicesRetry(servicesProjectId));
+    } catch (error) {
+      $("#services-result").textContent = error.message;
+    }
+  }),
+);
 await initialize();
