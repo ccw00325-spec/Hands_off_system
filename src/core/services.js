@@ -105,8 +105,16 @@ export class AuxiliaryServices {
       accounts,
       config: project.delivery ?? null,
       name: repositoryName(project.title, id),
-      result: await this.store.read(`delivery-${id}`, null),
+      result: await this.result(id),
     };
+  }
+
+  async result(id) {
+    const project = this.projects.find(await this.projects.list(), id);
+    const result = await this.store.read(`delivery-${id}`, null);
+    return result?.pending && result.revision !== project.delivery?.revision
+      ? null
+      : result;
   }
 
   async login(service) {
@@ -166,9 +174,11 @@ export class AuxiliaryServices {
       .toLowerCase();
     const scope = String(input.scope ?? "").trim();
     const target = String(input.target ?? "").trim();
+    const supabaseRef = String(input.supabaseRef ?? "").trim();
     if (
       (github && name && !slug.test(name)) ||
-      (vercel && (!slug.test(scope) || !slug.test(target)))
+      (vercel && (!slug.test(scope) || !slug.test(target))) ||
+      (supabaseRef && !/^[a-z0-9]{1,64}$/.test(supabaseRef))
     )
       throw new Error(
         "저장소 이름, Vercel 범위와 프로젝트 이름에 영문·숫자·하이픈을 사용하세요.",
@@ -185,6 +195,17 @@ export class AuxiliaryServices {
     if (accounts.github && !slug.test(accounts.github))
       throw new Error("GitHub 계정을 확인할 수 없습니다.");
     const prior = project.delivery;
+    const sameGitHub =
+      prior?.grantId === grant.grantId &&
+      prior?.name === name &&
+      prior?.accounts.github === accounts.github;
+    const production = input.production === true;
+    const sameVercel =
+      prior?.grantId === grant.grantId &&
+      prior?.scope === scope &&
+      prior?.target === target &&
+      prior?.accounts.vercel === accounts.vercel &&
+      prior?.production === production;
     const config = {
       revision: randomUUID(),
       grantId: grant.grantId,
@@ -193,8 +214,17 @@ export class AuxiliaryServices {
       name,
       scope,
       target,
-      production: input.production === true,
+      production,
+      supabaseRef,
       accounts,
+      always: {
+        github: Boolean(
+          github && sameGitHub && prior.always?.github && !input.resetApproval,
+        ),
+        vercel: Boolean(
+          vercel && sameVercel && prior.always?.vercel && !input.resetApproval,
+        ),
+      },
       repoId:
         prior?.grantId === grant.grantId &&
         prior?.name === name &&
@@ -221,7 +251,7 @@ export class AuxiliaryServices {
     return config;
   }
 
-  async publish(state, retry = false) {
+  async publish(state, retry = false, answer = null) {
     const id = state.projectId;
     const revision = state.options?.deliveryRevision;
     if (
@@ -230,13 +260,14 @@ export class AuxiliaryServices {
       !revision ||
       this.running.has(id)
     )
-      return;
+      return false;
     this.running.add(id);
     let temp;
     let result;
     const report = async (status, message) => {
       Object.assign(result, { status, message });
       await this.store.write(`delivery-${id}`, result);
+      if (status === "awaiting_approval") return;
       this.notify({
         type: "delivery",
         projectId: id,
@@ -254,8 +285,24 @@ export class AuxiliaryServices {
         return;
       const prior = await this.store.read(`delivery-${id}`, null);
       if (prior?.runId === state.id && !retry) return;
-      result = prior?.runId === state.id ? prior : { runId: state.id };
+      if (
+        answer &&
+        (prior?.runId !== state.id ||
+          prior.revision !== revision ||
+          prior.pending?.id !== answer.id ||
+          typeof answer.yes !== "boolean")
+      )
+        throw new Error("이 승인 요청은 이미 처리됐거나 만료됐습니다.");
+      result =
+        prior?.runId === state.id ? prior : { runId: state.id, revision };
       if (result.status === "completed") return;
+      if (result.pending && !answer) {
+        return true;
+      }
+      const answeredService = answer ? result.pending.service : null;
+      delete result.pending;
+      result.decisions ??= {};
+      if (answer) result.decisions[answeredService] = answer.yes;
       await report("running", "검증된 파일을 배포용으로 준비 중…");
       const snapshot = await this.workspace.snapshot(id);
       if (
@@ -264,6 +311,35 @@ export class AuxiliaryServices {
         snapshot.truncated
       )
         throw new Error("검증 이후 파일이 달라졌습니다. 다시 검증하세요.");
+      if (answer?.yes && answer.remember === true) {
+        await this.projects.mutate((data) => {
+          const stored = this.projects.find(data, id).delivery;
+          if (stored?.revision !== revision)
+            throw new Error("릴리스 설정이 변경됐습니다.");
+          stored.always ??= {};
+          stored.always[answeredService] = true;
+        });
+      }
+      const repoName =
+        config.resolvedName ||
+        config.name ||
+        repositoryName(state.repositoryName || project.title, id);
+      const requestApproval = async (service, target, action) => {
+        if (
+          config.always?.[service] ||
+          Object.hasOwn(result.decisions, service)
+        )
+          return false;
+        result.pending = {
+          id: randomUUID(),
+          service,
+          target,
+          action,
+          projectTitle: project.title,
+        };
+        await report("awaiting_approval", `${action} 승인 대기 중`);
+        return true;
+      };
       temp = await mkdtemp(join(tmpdir(), "hands-off-delivery-"));
       const files = snapshot.files.filter(
         (file) => !relativeFile(file.path).some((part) => part.startsWith(".")),
@@ -281,8 +357,22 @@ export class AuxiliaryServices {
         await mkdir(dirname(target), { recursive: true });
         await writeFile(target, file.content, { flag: "wx" });
       }
-      if (config.github && !result.github) {
+      if (
+        config.github &&
+        !result.github &&
+        result.decisions.github !== false
+      ) {
         await this.workspace.grant(id, state.grantId);
+        if (
+          await requestApproval(
+            "github",
+            `${config.accounts.github}/${repoName}`,
+            config.repoId
+              ? "GitHub 커밋·푸시"
+              : "비공개 저장소 생성 및 커밋·푸시",
+          )
+        )
+          return true;
         await report("running", "GitHub에 커밋·푸시 중…");
         result.github = await this.pushGitHub(
           id,
@@ -292,8 +382,20 @@ export class AuxiliaryServices {
         );
         await report("running", "GitHub 푸시 완료");
       }
-      if (config.vercel && !result.vercel) {
+      if (
+        config.vercel &&
+        !result.vercel &&
+        result.decisions.vercel !== false
+      ) {
         await this.workspace.grant(id, state.grantId);
+        if (
+          await requestApproval(
+            "vercel",
+            `${config.scope}/${config.target}`,
+            config.production ? "Vercel 운영 배포" : "Vercel 미리보기 배포",
+          )
+        )
+          return true;
         await report("running", "Vercel 배포 중…");
         const cli = await commandFor("vercel");
         if (
@@ -339,9 +441,16 @@ export class AuxiliaryServices {
           );
         }
       }
-      await report("completed", "자동 릴리스 완료");
+      await report(
+        "completed",
+        result.github || result.vercel
+          ? "릴리스 처리 완료"
+          : "이번 작업의 릴리스를 건너뛰었습니다.",
+      );
+      return true;
     } catch (error) {
       if (result) await report("failed", error.message).catch(() => {});
+      else if (answer) throw error;
     } finally {
       try {
         if (temp)
@@ -353,6 +462,12 @@ export class AuxiliaryServices {
           });
       } finally {
         this.running.delete(id);
+        if (result?.pending)
+          this.notify({
+            type: "delivery",
+            projectId: id,
+            result: structuredClone(result),
+          });
       }
     }
   }

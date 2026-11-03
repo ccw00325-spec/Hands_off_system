@@ -450,6 +450,17 @@ else {
       );
       handle("tower:projects", () => projects.list());
       handle("tower:services-status", (id) => auxiliary.status(id));
+      handle("tower:services-result", (id) => auxiliary.result(id));
+      handle("tower:services-answer", async (id, answer) => {
+        const state = await workflow.current(id);
+        if (
+          !state ||
+          !answer ||
+          !(await auxiliary.publish(state, true, answer))
+        )
+          throw new Error("현재 완료 작업의 승인 요청을 다시 확인하세요.");
+        return true;
+      });
       handle("tower:services-login", (service) => auxiliary.login(service));
       handle("tower:services-save", (id, input) =>
         exclusive(`delivery:${id}`, () => auxiliary.save(id, input)),

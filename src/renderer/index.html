@@ -1114,6 +1114,30 @@
       </form>
     </dialog>
 
+    <dialog
+      id="release-approval"
+      aria-labelledby="release-approval-title"
+      aria-describedby="release-approval-target"
+    >
+      <header class="dialog-heading">
+        <div>
+          <h2 id="release-approval-title">릴리스 승인</h2>
+          <p id="release-approval-target" class="secondary"></p>
+        </div>
+      </header>
+      <div class="services-content">
+        <div class="dialog-footer">
+          <button id="release-no" autofocus>아니요</button>
+          <button id="release-yes" class="primary">예</button>
+        </div>
+        <label class="check-label"
+          ><input type="checkbox" id="release-remember" /><span
+            id="release-remember-label"
+            >이 프로젝트에서 다음부터 묻지 않기</span
+          ></label
+        >
+      </div>
+    </dialog>
     <dialog id="services-dialog" aria-labelledby="services-title">
       <header class="dialog-heading">
         <div>
@@ -1182,6 +1206,15 @@
             Supabase는 계정 연결과 상태 확인을 제공합니다. 원격 DB 변경은
             Supabase CLI에서 별도로 실행합니다.
           </p>
+          <label
+            >Supabase 프로젝트 참조 ID (선택)
+            <input id="service-supabase-ref" maxlength="64"
+          /></label>
+          <p id="service-approval-policy" class="secondary"></p>
+          <label class="check-label" id="reset-release-approval-label" hidden
+            ><input id="reset-release-approval" type="checkbox" /> 이 프로젝트의
+            자동 승인 해제</label
+          >
           <button id="save-services" class="primary" type="submit">
             이 프로젝트에 저장
           </button>

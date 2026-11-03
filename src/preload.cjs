@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld(
     models: call("models"),
     projects: call("projects"),
     servicesStatus: call("services-status"),
+    servicesResult: call("services-result"),
+    servicesAnswer: call("services-answer"),
     servicesLogin: call("services-login"),
     servicesSave: call("services-save"),
     servicesRetry: call("services-retry"),

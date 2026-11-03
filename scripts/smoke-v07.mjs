@@ -162,6 +162,40 @@ try {
     true,
   );
   await page.locator("#close-services").click();
+  await application.evaluate(({ BrowserWindow }, projectId) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("tower:event", {
+      type: "delivery",
+      projectId,
+      result: {
+        status: "awaiting_approval",
+        message: "승인 대기 중",
+        pending: {
+          id: "fixture",
+          service: "github",
+          target: "fixture-user/focus-timer",
+          action: "비공개 저장소 생성 및 커밋·푸시",
+          projectTitle: "타이머",
+        },
+      },
+    });
+  }, projectId);
+  await page.locator("#release-approval[open]").waitFor();
+  assert.match(
+    await page.locator("#release-approval-target").innerText(),
+    /fixture-user\/focus-timer/,
+  );
+  assert.equal(await page.locator("#release-remember").isChecked(), false);
+  assert.equal(
+    await page
+      .locator("#release-no")
+      .evaluate((button) => document.activeElement === button),
+    true,
+  );
+  await page.keyboard.press("Escape");
+  await page.locator("#release-approval").waitFor({ state: "hidden" });
+  checks.push(
+    "Release approval displays the exact destination and defaults to one-time confirmation",
+  );
   checks.push(
     "Auxiliary services show CLI account status and project-specific opt-in defaults",
   );

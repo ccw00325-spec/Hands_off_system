@@ -29,6 +29,16 @@ body {
 #services-dialog {
   width: 570px;
 }
+#release-approval {
+  width: 460px;
+}
+#release-approval-target {
+  overflow-wrap: anywhere;
+}
+#release-approval .dialog-footer {
+  padding: 0 0 14px;
+  border: 0;
+}
 .services-content {
   padding: 16px 24px 24px;
 }

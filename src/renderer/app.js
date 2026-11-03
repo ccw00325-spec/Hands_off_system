@@ -158,6 +158,11 @@ function renderProjects(data) {
   currentRun = null;
   void refreshWorkspace();
   void loadConversation();
+  void call(api.servicesResult(roleProject))
+    .then((result) => {
+      if (projectData?.activeId === roleProject) renderDelivery(result);
+    })
+    .catch(() => {});
   const id = data.activeId;
   if (!resultImage)
     void call(api.latestImage(id))
@@ -1892,6 +1897,41 @@ function renderDelivery(result) {
     : "";
   $("#retry-delivery").hidden =
     !result || !["failed", "running"].includes(result.status);
+  if (result?.pending) showReleaseApproval(result.pending);
+}
+
+let releaseApproval;
+function showReleaseApproval(pending) {
+  const dialog = $("#release-approval");
+  if (dialog.open && releaseApproval?.id === pending.id) return;
+  releaseApproval = { id: pending.id, projectId: projectData.activeId };
+  $("#release-approval-title").textContent = `${pending.action}할까요?`;
+  $("#release-approval-target").textContent =
+    `${pending.projectTitle} → ${pending.target}`;
+  $("#release-remember").checked = false;
+  $("#release-remember-label").textContent =
+    pending.service === "github"
+      ? "이 프로젝트에서 다음부터 묻지 않고 커밋·푸시하기"
+      : "이 프로젝트에서 다음부터 묻지 않고 배포하기";
+  if (!dialog.open) dialog.showModal();
+}
+
+for (const yes of [false, true]) {
+  $(yes ? "#release-yes" : "#release-no").addEventListener(
+    "click",
+    async () => {
+      if (!releaseApproval) return;
+      const { id, projectId } = releaseApproval;
+      releaseApproval = null;
+      const remember = yes && $("#release-remember").checked;
+      $("#release-approval").close();
+      try {
+        await call(api.servicesAnswer(projectId, { id, yes, remember }));
+      } catch (error) {
+        toast(error.message, "error");
+      }
+    },
+  );
 }
 
 let servicesProjectId;
@@ -1913,7 +1953,21 @@ async function loadServices() {
   $("#service-scope").value = config?.scope || accounts.vercel.account || "";
   $("#service-target").value = config?.target || name;
   $("#service-production").checked = config?.production ?? false;
+  $("#service-supabase-ref").value = config?.supabaseRef ?? "";
+  renderApprovalPolicy(config);
   renderDelivery(result);
+}
+
+function renderApprovalPolicy(config) {
+  const automatic = [
+    config?.always?.github && "GitHub",
+    config?.always?.vercel && "Vercel",
+  ].filter(Boolean);
+  $("#service-approval-policy").textContent = automatic.length
+    ? `${automatic.join(" · ")} 자동 승인 중 · 배포 대상이 바뀌면 다시 확인합니다.`
+    : "검증이 끝나면 서비스마다 실행 여부를 확인합니다.";
+  $("#reset-release-approval-label").hidden = !automatic.length;
+  $("#reset-release-approval").checked = false;
 }
 
 $("#open-services").addEventListener("click", () => {
@@ -1950,7 +2004,7 @@ $("#services-form").addEventListener("submit", (event) => {
   event.preventDefault();
   void busy($("#save-services"), "저장 중…", async () => {
     try {
-      await call(
+      const config = await call(
         api.servicesSave(servicesProjectId, {
           github: $("#service-auto-github").checked,
           vercel: $("#service-auto-vercel").checked,
@@ -1958,10 +2012,13 @@ $("#services-form").addEventListener("submit", (event) => {
           scope: $("#service-scope").value,
           target: $("#service-target").value,
           production: $("#service-production").checked,
+          supabaseRef: $("#service-supabase-ref").value,
+          resetApproval: $("#reset-release-approval").checked,
         }),
       );
       $("#services-result").textContent =
         "저장했습니다. 다음 작업부터 적용합니다.";
+      renderApprovalPolicy(config);
     } catch (error) {
       $("#services-result").textContent = error.message;
     }
