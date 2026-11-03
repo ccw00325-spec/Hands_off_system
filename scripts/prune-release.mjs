@@ -1,5 +1,5 @@
 import { readFile, readdir, realpath, lstat, unlink } from "node:fs/promises";
-import { join, resolve, relative, dirname } from "node:path";
+import { join, resolve, relative, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export async function pruneRelease(directory) {
@@ -44,32 +44,38 @@ export async function pruneRelease(directory) {
     targets.push(target);
   }
   // All resolved targets have been checked before the first deletion; never recurse.
+  const removed = [];
+  const blocked = [];
   for (const target of targets) {
     for (let attempt = 0; ; attempt++) {
       try {
         await unlink(target);
+        removed.push(basename(target));
         break;
       } catch (error) {
-        if (!["EBUSY", "EPERM"].includes(error.code) || attempt === 4)
-          throw new Error(
-            `이전 실행 파일을 닫은 뒤 정리를 다시 실행하세요: ${target}`,
-            { cause: error },
-          );
+        if (error.code === "ENOENT") break;
+        if (!["EBUSY", "EPERM"].includes(error.code) || attempt === 4) {
+          blocked.push({ name: basename(target), code: error.code });
+          break;
+        }
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
   }
-  return { kept: current, removed: names };
+  return { kept: current, removed, blocked };
 }
 if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  console.log(
-    JSON.stringify(
-      await pruneRelease(dirname(dirname(fileURLToPath(import.meta.url)))),
-      null,
-      2,
-    ),
+  const result = await pruneRelease(
+    dirname(dirname(fileURLToPath(import.meta.url))),
   );
+  console.log(JSON.stringify(result, null, 2));
+  if (result.blocked.length) {
+    console.error(
+      "정리하지 못한 파일이 있습니다. 이전 앱을 닫거나 파일 권한을 확인한 뒤 node scripts/prune-release.mjs를 다시 실행하세요.",
+    );
+    process.exitCode = 1;
+  }
 }

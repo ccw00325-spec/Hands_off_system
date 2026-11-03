@@ -1,6 +1,6 @@
 # CW_Handsoff_sys
 
-[Hands_off_system](https://github.com/ccw00325-spec/Hands_off_system) · private · Windows x64 · v0.1.3
+[Hands_off_system](https://github.com/ccw00325-spec/Hands_off_system) · private · Windows x64 · v0.1.4
 
 <img src="src/renderer/assets/mascot.png" width="96" alt="박스를 옮기는 민트색 작업 캐릭터">
 
@@ -10,7 +10,7 @@
 
 ## 실행
 
-빌드 파일 `release/CW_Handsoff_sys 0.1.3.exe`를 실행합니다. 이전 창은 닫고 새 버전을 실행하세요. 소스 실행과 프로젝트 테스트에는 별도 Node.js 24 이상이 필요합니다.
+빌드 파일 `release/CW_Handsoff_sys 0.1.4.exe`를 실행합니다. 이전 창은 닫고 새 버전을 실행하세요. 소스 실행과 프로젝트 테스트에는 별도 Node.js 24 이상이 필요합니다.
 
 ```powershell
 npm ci
