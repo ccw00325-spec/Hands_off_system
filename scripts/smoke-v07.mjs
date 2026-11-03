@@ -43,6 +43,14 @@ try {
   await page.locator("#terminal-font-size").selectOption("14");
   await page.locator("#save-settings").click();
   await page.locator("#settings-dialog").waitFor({ state: "hidden" });
+  assert.equal(await page.locator("#startup-dialog").evaluate((dialog) => dialog.open), false);
+  assert.equal(await page.locator("#startup-progress").evaluate((progress) => progress.value), 3);
+  await page.locator("#open-guide").click();
+  await page.locator("#guide-dialog[open]").waitFor();
+  assert.equal(await page.locator("#guide-dialog li").count(), 3);
+  await page.keyboard.press("Escape");
+  await page.locator("#guide-dialog").waitFor({ state: "hidden" });
+  checks.push("Startup reaches the last local initialization stage; the guide opens and closes by keyboard");
   assert.equal(
     (await page.evaluate(() => window.tower.preferences())).value
       .terminalFontSize,

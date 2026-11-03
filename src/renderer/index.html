@@ -14,6 +14,19 @@
     <link rel="stylesheet" href="workbench-v07.css" />
   </head>
   <body>
+    <dialog id="startup-dialog" aria-labelledby="startup-title">
+      <div class="startup-stage" aria-hidden="true">
+        <img src="assets/mascot.png" alt="" width="96" height="96" />
+      </div>
+      <h2 id="startup-title">CW_Handsoff_sys</h2>
+      <progress
+        id="startup-progress"
+        max="3"
+        value="0"
+        aria-label="시작 준비 단계"
+      ></progress>
+      <p id="startup-status" role="status">상자를 들고 출근하는 중…</p>
+    </dialog>
     <header class="topbar">
       <a class="brand" href="#workspace" aria-label="CW_Handsoff_sys 작업 공간"
         ><img
@@ -27,6 +40,9 @@
         <span class="version" id="app-version">LOCAL / —</span></a
       >
       <div class="top-actions">
+        <button id="open-guide" class="subtle" aria-haspopup="dialog">
+          <span class="guide-icon" aria-hidden="true">?</span> Hands off 가이드
+        </button>
         <button id="toggle-sidebar" class="subtle" aria-expanded="true">
           프로젝트 ≡
         </button>
@@ -1093,6 +1109,53 @@
           </button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="guide-dialog" aria-labelledby="guide-title">
+      <header class="dialog-heading">
+        <div>
+          <h2 id="guide-title">Hands off 가이드</h2>
+          <p class="secondary">
+            한 번 요청하고, 여러 AI가 어떻게 작업하는지 한 화면에서 살펴보세요.
+          </p>
+        </div>
+        <button
+          id="close-guide"
+          class="icon-button"
+          type="button"
+          aria-label="가이드 닫기"
+        >
+          ×
+        </button>
+      </header>
+      <ol class="guide-steps">
+        <li>
+          <strong>작업 공간 준비</strong>
+          <p>
+            새 프로젝트에서 작업 폴더를 고르고, 계정 · 연결에서 사용할 AI를
+            연결하세요.
+          </p>
+        </li>
+        <li>
+          <strong>컨트롤 타워에 요청</strong>
+          <p>
+            AI 역할 변경에서 구현·UI·테스트 담당을 정하세요. 컨트롤 타워가
+            요청을 명세로 정리하고 담당자에게 넘깁니다.
+          </p>
+        </li>
+        <li>
+          <strong>진행과 결과 확인</strong>
+          <p>
+            각 AI의 로그와 오른쪽 실행 현황에서 작업을 따라가세요. 테스트 역할을
+            배정하면 실행 결과와 재현 절차도 확인할 수 있습니다. 코드 실행은
+            설정에서 동의한 뒤 진행됩니다.
+          </p>
+        </li>
+      </ol>
+      <p class="guide-note">
+        폴더별 대화가 저장되어 프로젝트를 바꿔도 이전 작업을 이어서 볼 수
+        있습니다.
+      </p>
     </dialog>
 
     <dialog id="settings-dialog" aria-labelledby="settings-title">

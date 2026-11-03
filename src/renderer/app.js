@@ -694,9 +694,30 @@ async function initialize() {
       }
     });
     try {
-      renderProjects(await call(api.projects()));
-      preferences = await call(api.preferences());
-      fillPreferences(preferences);
+      const startup = $("#startup-dialog");
+      const progress = $("#startup-progress");
+      const statusLine = $("#startup-status");
+      startup.showModal();
+      const arrival = Promise.allSettled(
+        startup
+          .querySelector("img")
+          .getAnimations()
+          .map((animation) => animation.finished),
+      );
+      try {
+        renderProjects(await call(api.projects()));
+        progress.value = 1;
+        statusLine.textContent =
+          "프로젝트 선반을 정리했어요. 설정을 확인하는 중…";
+        preferences = await call(api.preferences());
+        fillPreferences(preferences);
+        progress.value = 2;
+        statusLine.textContent = "상자를 내려놓고 작업대를 여는 중…";
+        await arrival;
+        progress.value = 3;
+      } finally {
+        startup.close();
+      }
       if (!preferences.onboardingComplete) $("#settings-dialog").showModal();
       const restored = await restoreSavedConnections();
       const status = await refreshStatus();
@@ -1845,4 +1866,11 @@ $("#gpt-model").addEventListener("change", () => {
     toast(error.message, "error"),
   );
 });
+$("#startup-dialog").addEventListener("cancel", (event) =>
+  event.preventDefault(),
+);
+$("#open-guide").addEventListener("click", () =>
+  $("#guide-dialog").showModal(),
+);
+$("#close-guide").addEventListener("click", () => $("#guide-dialog").close());
 await initialize();
