@@ -5,6 +5,7 @@ import {
   planningInstructions,
 } from "./providers.js";
 import { isolatedRequest } from "./isolated-request.js";
+import { CHAT_FORMAT } from "./agent-chat.js";
 
 // A Grok worker backed by the user's Cursor subscription, never a Grok web account.
 export class CursorProvider {
@@ -69,6 +70,9 @@ export class CursorProvider {
   }
   build(context) {
     return this.ask(BUILD_FORMAT, context);
+  }
+  chat(context) {
+    return this.ask(CHAT_FORMAT, context);
   }
   async plan(context) {
     return this.ask(await planningInstructions(), context);

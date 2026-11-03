@@ -30,6 +30,9 @@ import { BrowserOpener } from "./core/browser.js";
 import { CodexUsage, UsageService } from "./core/usage.js";
 import { CodexConnection } from "./core/codex.js";
 import { validateModelId } from "./core/team.js";
+import { Preferences } from "./core/preferences.js";
+import { Conversations } from "./core/conversations.js";
+import { AgentChat } from "./core/agent-chat.js";
 
 const directory = dirname(fileURLToPath(import.meta.url));
 app.setName("CW_Handsoff_sys");
@@ -60,6 +63,7 @@ let window,
   persistentSession,
   browser,
   usage;
+let preferences, conversations, agentChat;
 let restorePromise;
 let gptRestoreState = null;
 const once = new Set();
@@ -106,6 +110,23 @@ async function exclusive(key, action) {
   } finally {
     once.delete(key);
   }
+}
+async function executionOptions(id) {
+  const current = await status();
+  const settings = await preferences.get();
+  return {
+    maxRepairRounds: settings.maxRepairRounds,
+    validationScript: settings.validationScript,
+    allowExecution: settings.allowExecution,
+    unattended: settings.unattended,
+    funContract: true,
+    team: await roles.getTeam(id),
+    roles: await roles.get(id),
+    gptSource: current.gpt.source,
+    gptModel: current.gpt.modelId ?? "",
+    grokRoute: await grok.selection(),
+    geminiModel: (await store.read("gemini-model", {})).modelId ?? null,
+  };
 }
 async function status() {
   const vault = await store.secrets();
@@ -258,6 +279,8 @@ else {
       claude = new ClaudeConnection(notify);
       projects = new Projects(store);
       workspace = new Workspace(projects);
+      preferences = new Preferences(store);
+      conversations = new Conversations(store, projects);
       grok = new CursorProvider(
         store,
         notify,
@@ -291,9 +314,40 @@ else {
           claude: new ClaudeProvider(claude),
           gemini: new GeminiProvider(gemini),
         }),
-        notify,
-        (context) => validateProject(workspace, context),
+        (event) => {
+          notify(event);
+          if (event.type === "workflow")
+            void agentChat?.finishedRun(event.state).catch(() => {});
+        },
+        async (context) =>
+          validateProject(workspace, {
+            ...context,
+            options: {
+              ...context.options,
+              allowExecution:
+                context.options.allowExecution === true &&
+                (await preferences.get()).allowExecution,
+            },
+          }),
       );
+      agentChat = new AgentChat({
+        conversations,
+        workspace,
+        workflow,
+        optionsFor: async (id, conversationId) => {
+          const active = workflow.runs.get(id)?.state;
+          if (
+            workflow.isActive(id) &&
+            active?.options.conversationId === conversationId
+          ) {
+            const frozen = structuredClone(active.options);
+            delete frozen.conversationHistory;
+            return frozen;
+          }
+          return executionOptions(id);
+        },
+        notify,
+      });
       session.defaultSession.setPermissionRequestHandler(
         (_webContents, _permission, callback) => callback(false),
       );
@@ -386,6 +440,83 @@ else {
         exclusive("key", () => images.removeKey()),
       );
       handle("tower:projects", () => projects.list());
+      handle("tower:preferences", () => preferences.get());
+      handle("tower:save-preferences", (value) =>
+        exclusive("preferences", async () => {
+          const saved = await preferences.save(value);
+          if (!saved.allowExecution)
+            for (const [id, run] of workflow.runs)
+              if (run.state.status === "validating")
+                await workflow.stopAndWait(id);
+          return saved;
+        }),
+      );
+      handle("tower:conversation-index", () => conversations.list());
+      handle("tower:create-conversation", (id) => conversations.create(id));
+      handle("tower:conversation", async (id, conversationId) => {
+        let conversation = conversationId
+          ? await conversations.select(id, conversationId)
+          : await conversations.active(id);
+        if (!conversation) {
+          const legacy = await workflow.current(id);
+          conversation = await conversations.create(
+            id,
+            legacy?.request?.slice(0, 60) ?? "새 대화",
+            legacy?.id ?? null,
+          );
+          if (legacy?.request) {
+            await conversations.append(
+              id,
+              conversation.id,
+              "gpt",
+              "user",
+              legacy.request,
+            );
+            conversation = await conversations.read(id, conversation.id);
+          }
+        }
+        return {
+          conversation,
+          run: conversation.runId
+            ? await workflow.current(id, conversation.runId)
+            : null,
+        };
+      });
+      handle(
+        "tower:send-message",
+        (id, conversationId, agentId, message, mode) =>
+          exclusive(`chat:${id}:${agentId}`, () =>
+            agentChat.send(id, conversationId, agentId, message, mode),
+          ),
+      );
+      handle("tower:stop-message", (id, agentId) =>
+        agentChat.cancel(id, agentId),
+      );
+      handle("tower:rerun-tests", async (id, runId) =>
+        exclusive(`tests:${id}`, async () =>
+          workflow.revalidate(id, runId, await preferences.get()),
+        ),
+      );
+      handle("tower:test-report", async (id, runId) => {
+        const run = await workflow.current(id, runId);
+        if (!run?.testing) throw new Error("테스트 보고서가 없습니다.");
+        return (
+          await workspace.read(
+            id,
+            `.control-tower/runs/${run.id}/test-report.md`,
+            { internal: true },
+          )
+        ).toString();
+      });
+      handle("tower:choose-project-folder", async () => {
+        const result = await dialog.showOpenDialog(window, {
+          title: "새 프로젝트 폴더 선택",
+          defaultPath: app.getPath("documents"),
+          properties: ["openDirectory", "createDirectory"],
+        });
+        if (result.canceled || !result.filePaths[0]) return null;
+        return workspace.prepare(null, result.filePaths[0]);
+      });
       handle("tower:create-project", (title) => projects.create(title));
       handle("tower:rename-project", (id, title) => projects.rename(id, title));
       handle("tower:select-project", (id) => projects.select(id));
@@ -395,6 +526,7 @@ else {
           throw new Error("작업을 중지한 후 폴더를 변경하세요.");
         const result = await dialog.showOpenDialog(window, {
           title: "프로젝트 작업 폴더 선택",
+          defaultPath: app.getPath("documents"),
           properties: ["openDirectory", "createDirectory"],
         });
         if (result.canceled || !result.filePaths[0]) return null;
@@ -406,6 +538,8 @@ else {
         return workspace.consent(id, ticket, consent);
       });
       handle("tower:revoke-folder", async (id) => {
+        for (const agentId of ["gpt", "grok", "claude", "reviewer"])
+          agentChat.cancel(id, agentId);
         await workflow.stopAndWait(id);
         return workspace.serialize(id, () => projects.revoke(id));
       });
@@ -422,18 +556,17 @@ else {
         if (error) throw new Error("폴더를 열지 못했습니다.");
       });
       handle("tower:start-workflow", async (id, options) => {
-        const current = await status();
-        return workflow.start(id, {
-          ...options,
-          funContract: true,
-          unattended: options.unattended === true,
-          team: await roles.getTeam(id),
-          roles: await roles.get(id),
-          gptSource: current.gpt.source,
-          gptModel: options.gptModel || current.gpt.modelId || "",
-          grokRoute: await grok.selection(),
-          geminiModel: (await store.read("gemini-model", {})).modelId ?? null,
-        });
+        const conversation =
+          (await conversations.active(id)) ?? (await conversations.create(id));
+        return (
+          await agentChat.send(
+            id,
+            conversation.id,
+            "gpt",
+            options.request,
+            "work",
+          )
+        ).state;
       });
       handle("tower:workflow", (id) => workflow.current(id));
       handle("tower:stop-workflow", async (id) => {
@@ -597,6 +730,7 @@ else {
     codex?.close();
     workflow?.stopAll();
     usage?.close();
+    agentChat?.close();
   });
   app.on("window-all-closed", () => app.quit());
 }

@@ -107,6 +107,13 @@ export function roleProviders(providers) {
             options: agentOptions(context.options, role),
           });
         },
+        async chat(context) {
+          const agent = teamFor(context.options).find((row) => row.id === role);
+          return providers[agent.provider].chat({
+            ...context,
+            options: agentOptions(context.options, role),
+          });
+        },
       },
     ]),
   );

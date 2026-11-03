@@ -160,13 +160,39 @@ export function renderPanelTeam(team) {
   }
 }
 export function renderInspector(run) {
-  $("#inspector-state").textContent = run?.status ?? "대기";
+  $("#inspector-state").textContent =
+    {
+      planning: "명세 설계 중",
+      building: "기능 구현 중",
+      testing: "테스트 작성 중",
+      validating: "테스트 실행 중",
+      reviewing: "코드 검토 중",
+      repairing: "문제 수정 중",
+      final_review: "최종 검토 중",
+      completed: "완료",
+      awaiting_validation: "검증 대기",
+      needs_attention: "확인 필요",
+      needs_input: "추가 정보 필요",
+      cancelled: "중지",
+      interrupted: "중단됨",
+    }[run?.status] ?? "대기";
   const tasks = $("#inspector-tasks");
   tasks.replaceChildren();
   for (const task of run?.tasks ?? []) {
     const item = node("li", undefined, "inspector-task");
     item.append(
-      node("span", task.status, "task-state"),
+      node(
+        "span",
+        {
+          pending: "대기",
+          working: "진행 중",
+          reported: "완료 보고",
+          failed: "오류로 중단",
+          cancelled: "중지됨",
+          blocked: "진행 차단",
+        }[task.status] ?? task.status,
+        "task-state",
+      ),
       node("strong", task.title || task.id),
       node("small", `${task.owner} · ${task.kind ?? "작업"}`),
     );

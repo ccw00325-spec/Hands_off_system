@@ -17,6 +17,8 @@ import { GPTProvider } from "../src/core/providers.js";
 import { roleProviders } from "../src/core/roles.js";
 import { CodexConnection } from "../src/core/codex.js";
 import { nativeEnvironment } from "../src/core/child-env.js";
+import { validateProject } from "../src/core/validation.js";
+const qaEnabled = process.argv.includes("--qa");
 const parent = resolve("artifacts");
 await mkdir(parent, { recursive: true });
 const id = randomUUID(),
@@ -60,7 +62,9 @@ const report = {
   passed: false,
   deleted: false,
 };
-const validate = async () => {
+const validate = async (context) => {
+  const qa = qaEnabled ? await validateProject(workspace, context) : null;
+  if (qa && !qa.passed) return qa;
   if (
     createHash("sha256")
       .update(await readFile(join(root, "checks.cjs")))
@@ -102,13 +106,25 @@ const validate = async () => {
       });
     });
   });
-  if (!core.passed) return core;
+  if (!core.passed) return { ...qa, ...core };
   const { verifyTimerUI } = await import("./timer-ui-check.mjs");
   try {
     const ui = await verifyTimerUI(root);
-    return { ...core, summary: core.summary + "; " + ui };
+    return {
+      ...qa,
+      ...core,
+      output: [
+        qa?.output,
+        "[trusted checks.cjs stdout]\n" + core.summary,
+        "[host Electron UI assertions]\n" + ui,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      summary: (qa?.summary ?? "") + "; " + core.summary + "; " + ui,
+    };
   } catch (error) {
     return {
+      ...qa,
       configured: true,
       passed: false,
       summary: "timer UI validation: " + error.message,
@@ -120,7 +136,15 @@ try {
   if (!status.connected)
     throw new Error("Existing Codex ChatGPT login unavailable");
   const catalog = await native.models();
+  const requestedModel = process.argv
+    .find((value) => value.startsWith("--model="))
+    ?.slice(8);
+  if (requestedModel && !catalog.some((row) => row.id === requestedModel))
+    throw new Error("Requested model not in actual account catalog");
   const model =
+    (requestedModel
+      ? catalog.find((row) => row.id === requestedModel)
+      : null) ??
     catalog.find((row) => /sol/i.test(row.id)) ??
     catalog.find((row) => row.isDefault) ??
     catalog[0];
@@ -147,14 +171,23 @@ try {
   );
   const request = `/fun Build a complete Korean desktop-browser countdown timer app in this folder. This is an unattended authorized simulation: do not ask questions for reversible UI details, list assumptions in reviewItems. Use only vanilla HTML/CSS/JS and no network/dependencies. Files: index.html, timer-core.js, app.js, styles.css, package.json (type commonjs, test: node checks.cjs). Preserve existing checks.cjs unchanged. Timer API: timer-core.js is UMD, exports createTimer through module.exports and window.createTimer. createTimer({durationSeconds,now}) with injectable now() milliseconds (default Date.now), methods start(),pause(),reset(),setDuration(seconds) and getState() returning {status:'idle'|'running'|'paused'|'completed',remainingSeconds:integer ceil of remaining ms/1000}. start is idempotent while running; pause freezes remaining time; resume continues; zero completes; reset resets configured duration and idle; setDuration requires integer 1..3600 and throws otherwise. Do not restart unexpectedly. getState computes elapsed time from now so background throttling is safe. UI IDs required: duration-input (number seconds), start-button, pause-button, reset-button, time-display (MM:SS), status-display (data-status exact core status), error-message. Label controls in Korean. Default duration 60 seconds. Duration changes before start/reset set the core duration; zero/out-of-range input shows validation error and does not start. UI refreshes every <=100ms and supports keyboard buttons. Pause freezes UI; reset restores configured duration. Accessibility: update textContent, attributes, disabled and live-region nodes ONLY when their value changes, never rewrite unchanged values every 100ms. Put aria-live on status changes only, never on the ticking number. Invalid reset input must remain visible with an error and must not silently reset or clear the error. No sounds, notifications, accounts, persistence, external requests or automatic package installation. Create full functional UI with all four timer states and an input-error state. Both team panels use GPT independently: control/debug gpt; implementation/UI grok. Assign implementation tasks to grok, optional debug to gpt with dependencies. Produce the structured Fun contract including every required Context, Trigger, Reaction, test criteria, screen states, design tokens, decisions and deferred reviewItems. Do not claim tests passed until host validation says so.`;
   await engine.start(projectId, {
-    request,
+    request:
+      request +
+      (qaEnabled
+        ? " This run has the test role on panel gpt. Plan a dedicated kind:test task after implementation, with testPlan covering every requirement and exact case IDs in node:test names. Use meaningful Node unit/integration assertions for core and static HTML contracts only. Browser UI interactions are separately tested by the host; do not call static HTML checks e2e. Declare only tests/*.test.cjs as test code files. Never alter checks.cjs or app files from a test task. Include reproducible steps and expected outcomes for each case. No dependencies or package installation."
+        : ""),
     gptSource: "codex",
     gptModel: model.id,
     funContract: true,
     unattended: true,
     maxRepairRounds: 6,
+    allowExecution: true,
     team: [
-      { id: "gpt", provider: "gpt", roles: ["control", "debug", "review"] },
+      {
+        id: "gpt",
+        provider: "gpt",
+        roles: ["control", "debug", "review", ...(qaEnabled ? ["test"] : [])],
+      },
       { id: "grok", provider: "gpt", roles: ["feature", "ui"] },
     ],
     roles: { gpt: "gpt", grok: "gpt", claude: "gpt" },
@@ -169,6 +202,8 @@ try {
     reviewItems: state.reviewItems,
     governance: state.governance,
     validation: state.validation,
+    qaEnabled,
+    testing: state.testing ?? null,
     questions: state.questions,
     rounds: state.round,
     maxConcurrentNativeRequests: maxConcurrent,
@@ -203,6 +238,8 @@ try {
   const serialized = JSON.stringify(report, null, 2);
   await writeFile(join(parent, `timer-report-${id}.json`), serialized);
   await writeFile(join(parent, "timer-simulation-report.json"), serialized);
+  if (qaEnabled)
+    await writeFile(join(parent, "timer-qa-report.json"), serialized);
   console.log(
     JSON.stringify({
       report: resolve(parent, "timer-simulation-report.json"),

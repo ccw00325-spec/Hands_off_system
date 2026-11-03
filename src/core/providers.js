@@ -11,6 +11,7 @@ import { officialClaudeArgs } from "./claude-options.js";
 import { FUN_CONTRACT } from "./fun-contract.js";
 import { nativeEnvironment } from "./child-env.js";
 import { isolatedRequest } from "./isolated-request.js";
+import { CHAT_FORMAT } from "./agent-chat.js";
 
 export async function findExecutable(name) {
   const executable = process.platform === "win32" ? `${name}.exe` : name;
@@ -135,6 +136,7 @@ export class GPTProvider {
         snapshot,
         options: { team: options.team, unattended: options.unattended },
         correction: options.planCorrection,
+        history: options.conversationHistory ?? [],
       },
       options,
       signal,
@@ -143,6 +145,9 @@ export class GPTProvider {
   build(context) {
     const { signal, options, ...payload } = context;
     return this.ask(BUILD_FORMAT, payload, options, signal);
+  }
+  chat({ signal, options, ...payload }) {
+    return this.ask(CHAT_FORMAT, payload, options, signal);
   }
   review(context) {
     return this.ask(
@@ -248,6 +253,9 @@ export class ClaudeProvider {
   }
   build(context) {
     return this.ask(BUILD_FORMAT, context);
+  }
+  chat(context) {
+    return this.ask(CHAT_FORMAT, context);
   }
   async plan(context) {
     return this.ask(await planningInstructions(), context);

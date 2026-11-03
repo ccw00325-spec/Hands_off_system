@@ -4,8 +4,10 @@ import { PROVIDER_NAMES } from "./roles.js";
 import { teamFor, agentLabel } from "./team.js";
 import { compileFunPlan, skillHash } from "./fun-contract.js";
 import { readFile } from "node:fs/promises";
+import { testPlanMarkdown } from "./test-plan.js";
 
 const ACTIVE = new Set([
+  "testing",
   "planning",
   "building",
   "validating",
@@ -177,6 +179,18 @@ export class Workflow {
       run.promise = this.execute(run).catch(async (error) => {
         const cancelled = run.controller.signal.aborted && !run.failure;
         state.status = cancelled ? "cancelled" : "needs_attention";
+        for (const task of state.tasks)
+          if (task.status === "working")
+            task.status = cancelled ? "cancelled" : "failed";
+          else if (task.status === "pending")
+            task.status = cancelled ? "cancelled" : "blocked";
+        if (
+          state.testing &&
+          ["writing", "running"].includes(state.testing.status)
+        ) {
+          state.testing.status = cancelled ? "cancelled" : "failed";
+          state.testing.stale = true;
+        }
         await this.record(
           run,
           "system",
@@ -246,6 +260,12 @@ export class Workflow {
     const { state } = run;
     const snapshot = await this.snapshot(run);
     task.status = "working";
+    if (state.testing?.result) state.testing.stale = true;
+    task.startedAt = new Date().toISOString();
+    if (task.kind === "test") {
+      state.status = "testing";
+      if (state.testing) state.testing.status = "writing";
+    }
     await this.record(
       run,
       task.owner,
@@ -253,7 +273,13 @@ export class Workflow {
       { taskId: task.id, activity: "dispatch" },
     );
     const report = await this.providers[task.owner].build({
-      task,
+      task:
+        task.kind === "test"
+          ? {
+              ...task,
+              instructions: `${task.instructions}\nHost test plan: ${JSON.stringify({ ...state.testing.plan, cases: state.testing.plan.cases.filter((row) => task.requirementIds.includes(row.requirementId)), assignedFiles: task.testFiles ?? state.testing.plan.files })}\nWrite meaningful assertions for every case. Use node:test, name each test starting with its case ID (e.g. T1). Only edit assignedFiles, not every file in the full test plan. Never modify application code or weaken requirements. Do not claim execution. No package installation.`,
+            }
+          : task,
       issues,
       spec: state.spec,
       snapshot,
@@ -271,6 +297,13 @@ export class Workflow {
     const seen = new Set();
     for (const file of report.files) {
       relativeFile(file.path);
+      if (
+        task.kind === "test" &&
+        !(task.testFiles ?? state.testing.plan.files).includes(file.path)
+      )
+        throw new Error(
+          "테스트 담당자는 계획에 선언한 테스트 코드만 수정할 수 있습니다.",
+        );
       if (
         seen.has(file.path) ||
         typeof file.content !== "string" ||
@@ -306,9 +339,12 @@ export class Workflow {
       await this.record(run, task.owner, `${result.path} 저장`, {
         taskId: task.id,
         path: result.path,
+        preview: file.content.slice(0, 8000),
+        previewTruncated: file.content.length > 8000,
       });
     }
     task.status = "reported";
+    if (task.kind === "test" && state.testing) state.testing.status = "ready";
     task.report = {
       summary: report.summary,
       changed,
@@ -424,6 +460,16 @@ export class Workflow {
     state.requirements = plan.requirements ?? [];
     state.decisions = plan.decisions ?? [];
     state.reviewItems = plan.reviewItems ?? [];
+    if (plan.testPlan) {
+      state.testing = { status: "planned", plan: plan.testPlan, result: null };
+      state.options.testPlan = plan.testPlan;
+      await this.workspace.write(
+        state.projectId,
+        `.control-tower/runs/${state.id}/test-plan.md`,
+        testPlanMarkdown(plan.testPlan),
+        { internal: true, grantId: state.grantId, newOnly: true },
+      );
+    }
     state.tasks = plan.tasks.map((task) => ({ ...task, status: "pending" }));
     await this.workspace.write(
       state.projectId,
@@ -443,6 +489,10 @@ export class Workflow {
     );
     while (true) {
       state.status = "validating";
+      if (state.testing)
+        state.testing.status = state.options.allowExecution
+          ? "running"
+          : "permission";
       await this.record(run, "system", "프로젝트 검증을 실행합니다.");
       const beforeValidation = await this.snapshot(run);
       state.validation = await this.validate({
@@ -450,6 +500,17 @@ export class Workflow {
         grantId: state.grantId,
         options: state.options,
         signal: run.controller.signal,
+        onOutput: (event) =>
+          this.notify({
+            type: "agent-progress",
+            projectId: state.projectId,
+            conversationId: state.options.conversationId,
+            agentId:
+              teamFor(state.options).find((agent) =>
+                agent.roles.includes("test"),
+              )?.id ?? "gpt",
+            ...event,
+          }),
       });
       const frozen = await this.snapshot(run);
       state.snapshotHash = frozen.hash;
@@ -457,9 +518,11 @@ export class Workflow {
         state.validation = {
           ...state.validation,
           passed: false,
+          stale: true,
           summary:
             "검증 중 소스가 변경되어 검증 결과를 현재 파일에 적용할 수 없습니다.",
         };
+      await this.testingResult(run);
       state.status = "reviewing";
       await this.record(
         run,
@@ -568,9 +631,112 @@ export class Workflow {
       await this.buildTasks(run, [...selected], issues);
     }
   }
-  async current(projectId) {
+  async testingResult(run) {
+    const { state } = run;
+    if (!state.testing) return;
+    state.testing.stale = state.validation.stale === true;
+    state.testing.status = state.validation.requiresConsent
+      ? "permission"
+      : state.validation.passed
+        ? "passed"
+        : "failed";
+    state.testing.result = state.validation;
+    const report = [
+      testPlanMarkdown(state.testing.plan),
+      "\n# 실제 실행 결과",
+      `상태: ${state.testing.status}`,
+      `명령: ${state.validation.command ?? "미실행"}`,
+      `종료 코드: ${state.validation.exitCode ?? "없음"}`,
+      `요약: ${state.validation.summary}`,
+      ...(state.validation.cases ?? []).map(
+        (row) => `- ${row.id}: ${row.status} · ${row.title}`,
+      ),
+      "\n```text",
+      state.validation.output ?? "실행 출력 없음",
+      "```",
+    ].join("\n");
+    await this.workspace.write(
+      state.projectId,
+      `.control-tower/runs/${state.id}/test-report.md`,
+      report,
+      { internal: true, grantId: state.grantId },
+    );
+  }
+  async revalidate(projectId, runId, options) {
+    if (this.isActive(projectId))
+      throw new Error("진행 중인 작업이 끝난 후 테스트를 다시 실행하세요.");
+    this.starting.add(projectId);
+    try {
+      const state = await this.current(projectId, runId);
+      if (!state || !state.testing)
+        throw new Error("이 대화에는 테스트 계획이 없습니다.");
+      const before = await this.workspace.snapshot(projectId);
+      if (before.hash !== state.snapshotHash)
+        throw new Error(
+          "검토 이후 소스가 변경되었습니다. 컨트롤 타워에 재검토를 요청하세요.",
+        );
+      const run = {
+        state,
+        controller: new AbortController(),
+        queue: Promise.resolve(),
+      };
+      this.runs.set(projectId, run);
+      state.options.allowExecution = options.allowExecution === true;
+      state.status = "validating";
+      state.testing.status = state.options.allowExecution
+        ? "running"
+        : "permission";
+      await this.record(run, "system", "저장된 테스트를 다시 실행합니다.");
+      run.promise = (async () => {
+        state.validation = await this.validate({
+          projectId,
+          grantId: state.grantId,
+          options: state.options,
+          signal: run.controller.signal,
+          onOutput: (event) =>
+            this.notify({
+              type: "agent-progress",
+              projectId,
+              conversationId: state.options.conversationId,
+              agentId: "gpt",
+              ...event,
+            }),
+        });
+        const after = await this.workspace.snapshot(projectId);
+        if (before.hash !== after.hash)
+          state.validation = {
+            ...state.validation,
+            passed: false,
+            stale: true,
+            summary: "검증 중 소스가 변경되었습니다.",
+          };
+        await this.testingResult(run);
+        const reviewed =
+          state.reviews?.length &&
+          state.reviews.every((review) => !review.issues.length);
+        state.status =
+          state.validation.passed && reviewed
+            ? "completed"
+            : "awaiting_validation";
+        await this.record(run, "system", state.validation.summary);
+      })().catch(async (error) => {
+        state.status = run.controller.signal.aborted
+          ? "cancelled"
+          : "needs_attention";
+        state.testing.status = run.controller.signal.aborted
+          ? "cancelled"
+          : "failed";
+        state.testing.stale = true;
+        await this.record(run, "system", error.message);
+      });
+      return structuredClone(state);
+    } finally {
+      this.starting.delete(projectId);
+    }
+  }
+  async current(projectId, runId = null) {
     const active = this.runs.get(projectId);
-    if (active) {
+    if (active && (!runId || active.state.id === runId)) {
       try {
         const grant = await this.workspace.grant(projectId);
         if (grant.root !== active.state.root) return null;
@@ -580,15 +746,17 @@ export class Workflow {
       return structuredClone(active.state);
     }
     try {
-      const pointer = JSON.parse(
-        (
-          await this.workspace.read(
-            projectId,
-            ".control-tower/latest-run.json",
-            { internal: true },
-          )
-        ).toString(),
-      );
+      const pointer = runId
+        ? { id: runId }
+        : JSON.parse(
+            (
+              await this.workspace.read(
+                projectId,
+                ".control-tower/latest-run.json",
+                { internal: true },
+              )
+            ).toString(),
+          );
       if (!/^[0-9a-f-]{36}$/.test(pointer.id))
         throw new Error("잘못된 작업 기록");
       const state = JSON.parse(

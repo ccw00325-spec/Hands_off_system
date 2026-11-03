@@ -29,19 +29,14 @@ export function mascotState(
   let state = "idle",
     message = "다음 작업을 기다리고 있어요.";
   const modes = {
-    planning: [
-      "planning",
-      "컨트롤 타워가 요구사항과 작업 명세를 정리하고 있어요.",
-    ],
-    building: ["working", "기능·UI 담당이 배정된 작업을 처리하고 있어요."],
-    repairing: ["working", "담당 AI가 지적된 문제를 수정하고 있어요."],
-    validating: ["checking", "저장된 코드의 실행 검증을 확인하고 있어요."],
-    reviewing: ["checking", "컨트롤 타워가 같은 코드 버전을 검토하고 있어요."],
-    final_review: [
-      "checking",
-      "배정된 모든 패널의 세션이 최종 검토하고 있어요.",
-    ],
-    completed: ["done", "실행 검증과 최종 검토를 통과했어요."],
+    planning: ["planning", "요구사항 빈칸에 손전등 비추는 중…"],
+    building: ["working", "기능 부품을 차곡차곡 조립하는 중…"],
+    testing: ["checking", "예외 상황으로 모서리를 톡톡 두드리는 중…"],
+    repairing: ["working", "삐걱이는 부품 다시 조이는 중…"],
+    validating: ["checking", "방금 만든 걸 검사대에서 굴려보는 중…"],
+    reviewing: ["checking", "버그 발자국 따라 손전등 옮기는 중…"],
+    final_review: ["checking", "출고 전에 놓친 나사 한 번 더 찾는 중…"],
+    completed: ["done", "검사 통과! 마지막 상자까지 배송 완료."],
     awaiting_validation: [
       "waiting",
       "코드 검토는 끝났고, 실행 검증을 기다리고 있어요.",
@@ -58,9 +53,15 @@ export function mascotState(
     interrupted: ["paused", "이전 작업이 중단됐어요. 기록을 확인해 주세요."],
   };
   if (run && modes[run.status]) [state, message] = modes[run.status];
+  if (
+    run?.status === "building" &&
+    run.tasks?.some((task) => task.status === "working" && task.kind === "ui")
+  )
+    message = "버튼들 자리 배치 회의 중…";
   const active = [
     "planning",
     "building",
+    "testing",
     "repairing",
     "validating",
     "reviewing",
@@ -89,6 +90,77 @@ export function createMascot(stage) {
   const carrier = stage.querySelector(".mascot-carrier"),
     toggle = stage.querySelector(".mascot-motion-toggle");
   let lastKey = null;
+  let runKey = null,
+    courierQueue = [],
+    delivering = false;
+  const courier = document.querySelector("#courier");
+  async function deliver() {
+    if (
+      delivering ||
+      !courierQueue.length ||
+      !courier ||
+      stage.dataset.motion !== "on" ||
+      document.hidden
+    )
+      return;
+    delivering = true;
+    const event = courierQueue.shift();
+    const root = document.querySelector("#workspace-view");
+    const source =
+      event.from === "gpt"
+        ? document.querySelector(".planner .panel-heading")
+        : document.querySelector(
+            `[data-agent-panel="${event.from}"] .panel-heading`,
+          );
+    const target =
+      event.to === "gpt"
+        ? document.querySelector(".planner .panel-heading")
+        : document.querySelector(
+            `[data-agent-panel="${event.to}"] .panel-heading`,
+          );
+    if (!root || !source || !target) {
+      delivering = false;
+      return;
+    }
+    const bounds = root.getBoundingClientRect(),
+      from = source.getBoundingClientRect(),
+      to = target.getBoundingClientRect();
+    const x1 = from.left - bounds.left + from.width / 2 - 27,
+      y1 = from.top - bounds.top - 12,
+      x2 = to.left - bounds.left + to.width / 2 - 27,
+      y2 = to.top - bounds.top - 12;
+    courier.hidden = false;
+    courier.dataset.from = event.from;
+    courier.dataset.to = event.to;
+    const token = runKey;
+    try {
+      const animation = courier.animate(
+        [
+          { transform: `translate(${x1}px,${y1}px) rotate(-5deg)`, opacity: 0 },
+          {
+            transform: `translate(${x1}px,${y1}px) rotate(3deg)`,
+            opacity: 1,
+            offset: 0.08,
+          },
+          {
+            transform: `translate(${x2}px,${y2}px) rotate(-3deg)`,
+            opacity: 1,
+            offset: 0.9,
+          },
+          { transform: `translate(${x2}px,${y2}px) rotate(0deg)`, opacity: 0 },
+        ],
+        { duration: 1100, easing: "ease-in-out" },
+      );
+      await animation.finished;
+    } catch {
+    } finally {
+      if (runKey === token) {
+        courier.hidden = true;
+        delivering = false;
+        void deliver();
+      }
+    }
+  }
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   let enabled = true;
   try {
@@ -100,6 +172,11 @@ export function createMascot(stage) {
     toggle.textContent = enabled ? "움직임 끄기" : "움직임 켜기";
     toggle.setAttribute("aria-pressed", String(enabled));
     if (!moving) carrier.classList.remove("is-delivering");
+    if (!moving && courier) {
+      courierQueue = [];
+      courier.getAnimations().forEach((animation) => animation.cancel());
+      courier.hidden = true;
+    }
   }
   toggle.addEventListener("click", () => {
     enabled = !enabled;
@@ -120,6 +197,13 @@ export function createMascot(stage) {
   motion();
   return {
     update(run, assignments) {
+      if (runKey !== run?.id) {
+        runKey = run?.id;
+        courierQueue = [];
+        delivering = false;
+        courier?.getAnimations().forEach((animation) => animation.cancel());
+        if (courier) courier.hidden = true;
+      }
       const view = mascotState(run, assignments);
       stage.dataset.state = view.state;
       stage.querySelector(".mascot-message").textContent = view.message;
@@ -149,6 +233,10 @@ export function createMascot(stage) {
       if (view.handoff.key === lastKey) return;
       lastKey = view.handoff.key;
       if (stage.dataset.motion !== "on" || document.hidden) return;
+      if (courier) {
+        courierQueue.push(view.handoff);
+        void deliver();
+      }
       carrier.dataset.from = view.handoff.from;
       carrier.dataset.to = view.handoff.to;
       carrier.classList.remove("is-delivering");

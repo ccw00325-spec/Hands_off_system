@@ -9,7 +9,9 @@ import { Workspace } from "../src/core/workspace.js";
 import { validateProject } from "../src/core/validation.js";
 async function setup(t) {
   const base = await mkdtemp(join(tmpdir(), "tower-validation-"));
-  t.after(() => rm(base, { recursive: true, force: true }));
+  t.after(() =>
+    rm(base, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }),
+  );
   const root = join(base, "project");
   await mkdir(root);
   const store = new Store(join(base, "data"), {});
@@ -42,13 +44,13 @@ async function setup(t) {
 test("validation runs only the user-selected npm script after explicit execution consent", async (t) => {
   const f = await setup(t),
     signal = new AbortController().signal;
-  await assert.rejects(
-    validateProject(f.workspace, {
-      ...f,
-      signal,
-      options: { validationScript: "pass", allowExecution: false },
-    }),
-  );
+  const denied = await validateProject(f.workspace, {
+    ...f,
+    signal,
+    options: { validationScript: "pass", allowExecution: false },
+  });
+  assert.equal(denied.passed, false);
+  assert.equal(denied.requiresConsent, true);
   const pass = await validateProject(f.workspace, {
     ...f,
     signal,

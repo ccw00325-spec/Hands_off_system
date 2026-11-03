@@ -15,6 +15,7 @@ import { isolatedRequest } from "./isolated-request.js";
 import { nodeRuntime } from "./node-runtime.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { CHAT_FORMAT } from "./agent-chat.js";
 
 export const GEMINI_VERSION = "0.66.0";
 async function exists(path) {
@@ -455,6 +456,9 @@ export class GeminiProvider {
   }
   build(context) {
     return this.ask(BUILD_FORMAT, context);
+  }
+  chat(context) {
+    return this.ask(CHAT_FORMAT, context);
   }
   review(context) {
     return this.ask(REVIEW_FORMAT, context);

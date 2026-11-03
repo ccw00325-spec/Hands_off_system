@@ -11,6 +11,7 @@
     <link rel="icon" type="image/png" href="assets/mascot.png" />
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="app.js"></script>
+    <link rel="stylesheet" href="workbench-v07.css" />
   </head>
   <body>
     <header class="topbar">
@@ -22,20 +23,22 @@
           width="36"
           height="36"
         />
-        CW_Handsoff_sys <span class="version">LOCAL / 0.6</span></a
+        CW_Handsoff_sys <span class="version">LOCAL / 0.7</span></a
       >
       <div class="top-actions">
         <button id="toggle-sidebar" class="subtle" aria-expanded="true">
           프로젝트 ≡
         </button>
-        <label class="project-picker"
+        <label class="project-picker" hidden=""
           >프로젝트
           <select id="project-select" aria-label="프로젝트 선택"></select
         ></label>
         <button id="new-project" class="subtle">＋ 새 프로젝트</button>
         <button id="open-connections" class="connection-button">
           <span class="dot" id="connection-dot"></span> 계정 · 연결
-          <span id="connection-count">0</span>
+          <span id="connection-count">0</span></button
+        ><button id="open-settings" class="subtle" title="작업·권한·화면 설정">
+          설정 ⚙
         </button>
       </div>
     </header>
@@ -47,16 +50,24 @@
       <div class="quota-items">
         <button class="quota-item" data-usage="gpt">
           <span>GPT <small>직접 로그인</small></span
-          ><strong id="quota-gpt">—</strong></button
+          ><strong id="quota-gpt">—</strong
+          ><span class="quota-window-label">5시간 / 주간</span></button
         ><button class="quota-item" data-usage="claude">
           <span>Claude <small>공식 /usage</small></span
-          ><strong id="quota-claude">—</strong></button
+          ><strong id="quota-claude">—</strong
+          ><span class="quota-window-label">5시간 / 주간</span></button
         ><button class="quota-item" data-usage="grok">
           <span>Grok <small>Cursor 계정</small></span
-          ><strong id="quota-grok">—</strong></button
+          ><strong id="quota-grok">—</strong
+          ><span class="quota-window-label">5시간 / 주간</span></button
+        ><button class="quota-item" data-usage="gemini">
+          <span>Gemini <small>공식 한도</small></span
+          ><strong id="quota-gemini">—/—</strong
+          ><span class="quota-window-label">5시간 / 주간</span></button
         ><button class="quota-item reference-quota" data-usage="codex">
           <span>Codex CLI <small>별도 계정 · 참고</small></span
           ><strong id="quota-codex">—</strong>
+          <span class="quota-window-label">5시간 / 주간</span>
         </button>
       </div>
       <button id="refresh-usage" class="text-button">새로고침 ↻</button>
@@ -73,14 +84,17 @@
             ＋
           </button>
         </header>
-        <div id="sidebar-projects"></div>
-        <h2>FILES</h2>
         <input
           id="sidebar-file-search"
-          aria-label="파일 검색"
-          placeholder="파일 검색…"
+          aria-label="대화 검색"
+          placeholder="대화 검색…"
         />
-        <div id="sidebar-files">
+        <div id="sidebar-projects"></div>
+        <button id="new-conversation" class="sidebar-new-chat">
+          ＋ 새 대화
+        </button>
+
+        <div id="sidebar-files" hidden="">
           <p class="hint">폴더를 연결하면 파일을 볼 수 있습니다.</p>
         </div>
         <footer>
@@ -92,8 +106,13 @@
           <div>
             <p class="eyebrow">YOUR LOCAL BUILD SPACE</p>
             <div class="title-row">
-              <h1 id="project-title">새 프로젝트</h1>
-              <button id="edit-title" class="subtle">제목 편집</button>
+              <span id="project-title" class="project-breadcrumb"
+                >새 프로젝트</span
+              >
+              <h1 id="conversation-title">새 대화</h1>
+              <button id="edit-title" class="subtle" title="프로젝트 이름 변경">
+                이름 편집
+              </button>
             </div>
             <p class="secondary">
               요구사항을 정리하고, 시안을 만들고, 구현을 연결하는 작업 공간.
@@ -104,21 +123,7 @@
             ><span id="project-state">작업 대기</span>
           </div>
         </section>
-        <section class="folderbar" aria-label="프로젝트 작업 폴더">
-          <span class="log-label">WORKSPACE</span
-          ><span id="folder-path">작업 폴더를 연결하세요.</span
-          ><span id="folder-permission" class="status-pill"
-            >접근 동의 필요</span
-          >
-          <div class="folder-actions">
-            <button id="choose-folder">폴더 연결</button
-            ><button id="show-files" hidden>파일 보기</button
-            ><button id="open-folder" class="subtle" hidden>탐색기 ↗</button
-            ><button id="revoke-folder" class="text-button" hidden>
-              접근 해제
-            </button>
-          </div>
-        </section>
+
         <nav class="view-tabs" aria-label="작업 보기">
           <button class="selected" id="tab-workspace" aria-selected="true">
             에이전트 작업 공간</button
@@ -134,154 +139,6 @@
             </div>
             <button id="open-roles">AI 역할 변경 ⇄</button>
           </section>
-          <section class="terminal planner" aria-labelledby="planner-heading">
-            <header class="panel-heading">
-              <div class="agent-name">
-                <span class="agent-icon mint">G</span>
-                <div>
-                  <h2 id="planner-heading">
-                    <strong id="planner-provider">GPT</strong>
-                    <span>컨트롤 타워</span>
-                  </h2>
-                  <p>요구사항 · UX 설계 · 기능 명세 · UI 시안 지시</p>
-                </div>
-              </div>
-              <div class="panel-actions">
-                <button class="text-button change-role" data-role="gpt">
-                  AI 변경 ⇄</button
-                ><span class="status-pill" id="gpt-status">미연결</span
-                ><button class="subtle connect-shortcut">연결 설정 ↗</button>
-              </div>
-            </header>
-            <div class="terminal-body">
-              <p class="log-line">
-                <span class="log-label">SYSTEM</span> 명세 전달 → 기능별 완료
-                보고 → 컨트롤 타워 재검토 → 담당 AI 수정 → 재검증
-              </p>
-              <div class="empty-agent" id="planner-empty">
-                <span class="crosshair">＋</span>
-                <h3>이 폴더에서 함께 만듭니다.</h3>
-                <p>
-                  작업 폴더와 AI 계정을 연결하세요.<br />컨트롤 타워가 fun으로
-                  명세를 정리하고, 작업 보고를 받아 수정까지 조율합니다.
-                </p>
-                <button class="primary connect-shortcut">
-                  AI 연결 설정 <span>↗</span>
-                </button>
-              </div>
-              <div
-                id="planner-events"
-                class="event-list"
-                hidden
-                aria-live="polite"
-              ></div>
-            </div>
-            <div class="composer">
-              <label class="sr-only" for="planner-input"
-                >컨트롤 타워에게 요청</label
-              ><textarea
-                id="planner-input"
-                rows="2"
-                maxlength="16000"
-                placeholder="이 프로젝트 폴더에서 어떤 앱을 만들고 싶은지 입력하세요. 추가 질문이 도착하면 답을 포함해 다시 요청할 수 있습니다."
-              ></textarea>
-              <div class="composer-bottom">
-                <span>fun · 계획 컨트롤 타워에만 적용</span>
-                <div class="model-controls">
-                  <select id="gpt-model" aria-label="GPT 실행 모델">
-                    <option value="">GPT 모델 선택</option></select
-                  ><button id="model-button" class="model-button">
-                    목록 불러오기 ▾
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div class="run-controls">
-              <label
-                >자동 수정 최대 횟수<input
-                  id="max-repair-rounds"
-                  type="number"
-                  min="0"
-                  max="20"
-                  value="2"
-                  placeholder="직접 설정"
-                  aria-label="자동 수정 최대 횟수" /></label
-              ><label
-                >검증 npm 스크립트<input
-                  id="validation-script"
-                  type="text"
-                  maxlength="80"
-                  placeholder="예: test"
-                  aria-label="검증 npm 스크립트" /></label
-              ><label class="check-label"
-                ><input id="allow-execution" type="checkbox" />검증 스크립트
-                실행에 동의</label
-              ><label class="check-label unattended-option"
-                ><input id="unattended-mode" type="checkbox" checked />미정
-                사항은 가정·검토 목록으로 기록</label
-              >
-              <div class="run-actions">
-                <button id="start-workflow" class="primary">작업 시작 →</button
-                ><button id="stop-workflow" hidden>작업 중지</button>
-              </div>
-            </div>
-            <p id="run-readiness" class="run-readiness">
-              폴더와 AI 연결을 확인한 뒤 시작할 수 있습니다. 검증 명령이 없으면
-              전체 완료로 표시하지 않습니다.
-            </p>
-          </section>
-          <section
-            id="mascot-stage"
-            class="mascot-stage"
-            data-state="idle"
-            aria-label="캐릭터 작업 전달 상태"
-          >
-            <div class="mascot-copy">
-              <span class="log-label">TASK COURIER</span>
-              <p class="mascot-message" role="status">
-                다음 작업을 기다리고 있어요.
-              </p>
-              <p class="mascot-event hint">
-                실제 작업 전달과 완료 보고에 맞춰 움직입니다.
-              </p>
-            </div>
-            <div class="mascot-route" aria-hidden="true">
-              <span class="mascot-role mascot-controller" data-mascot-role="gpt"
-                >컨트롤 타워 · GPT</span
-              ><span class="mascot-spine"></span
-              ><span class="mascot-branch"></span
-              ><span class="mascot-role mascot-feature" data-mascot-role="grok"
-                >기능 구현 · Grok</span
-              ><span class="mascot-role mascot-ui" data-mascot-role="claude"
-                >UI 구현·연결 · Claude</span
-              >
-              <div class="mascot-carrier">
-                <img
-                  class="mascot-sprite"
-                  src="assets/mascot.png"
-                  alt=""
-                  width="64"
-                  height="64"
-                />
-              </div>
-            </div>
-            <button
-              class="text-button mascot-motion-toggle"
-              aria-pressed="true"
-              type="button"
-            >
-              움직임 끄기
-            </button>
-          </section>
-          <div class="dispatch" aria-label="작업 전달 흐름">
-            <span class="dispatch-tag">DISPATCH ↓</span
-            ><span>버전 명세 + UI 기준</span
-            ><span class="dispatch-arrow">↓</span
-            ><span>완성된 기능부터 UI 연결</span
-            ><span class="dispatch-pending" id="round-indicator"
-              >수정 라운드 —</span
-            >
-          </div>
           <div class="workers">
             <section
               class="terminal worker"
@@ -321,8 +178,40 @@
               <div
                 class="event-list worker-events"
                 id="grok-events"
-                hidden
+                hidden=""
               ></div>
+              <div
+                id="grok-chat"
+                class="panel-chat-history"
+                aria-live="polite"
+              ></div>
+              <pre id="grok-progress" class="live-output" hidden=""></pre>
+              <form class="agent-chat-form" data-agent="grok">
+                <label class="sr-only" for="grok-input">이 AI에게 질문</label
+                ><textarea
+                  id="grok-input"
+                  rows="2"
+                  maxlength="16000"
+                  placeholder="이 AI에게 질문하세요. 예: 방금 만든 함수가 어떻게 동작해?"
+                ></textarea>
+                <div class="agent-chat-actions">
+                  <span>프로젝트 질문 · 읽기 전용</span
+                  ><button
+                    type="button"
+                    class="stop-agent-chat"
+                    data-agent="grok"
+                    hidden=""
+                  >
+                    응답 중지</button
+                  ><button
+                    type="submit"
+                    class="send-agent-chat"
+                    data-agent="grok"
+                  >
+                    보내기 ↑
+                  </button>
+                </div>
+              </form>
               <div class="worker-footer">
                 <span id="grok-model-label">Grok 모델 미선택</span
                 ><button class="text-button change-role" data-role="grok">
@@ -364,8 +253,40 @@
               <div
                 class="event-list worker-events"
                 id="claude-events"
-                hidden
+                hidden=""
               ></div>
+              <div
+                id="claude-chat"
+                class="panel-chat-history"
+                aria-live="polite"
+              ></div>
+              <pre id="claude-progress" class="live-output" hidden=""></pre>
+              <form class="agent-chat-form" data-agent="claude">
+                <label class="sr-only" for="claude-input">이 AI에게 질문</label
+                ><textarea
+                  id="claude-input"
+                  rows="2"
+                  maxlength="16000"
+                  placeholder="이 AI에게 질문하세요. 예: 방금 만든 함수가 어떻게 동작해?"
+                ></textarea>
+                <div class="agent-chat-actions">
+                  <span>프로젝트 질문 · 읽기 전용</span
+                  ><button
+                    type="button"
+                    class="stop-agent-chat"
+                    data-agent="claude"
+                    hidden=""
+                  >
+                    응답 중지</button
+                  ><button
+                    type="submit"
+                    class="send-agent-chat"
+                    data-agent="claude"
+                  >
+                    보내기 ↑
+                  </button>
+                </div>
+              </form>
               <div class="worker-footer">
                 <span id="claude-model-label">공급자 기본 모델</span
                 ><button class="text-button change-role" data-role="claude">
@@ -377,7 +298,7 @@
               class="terminal worker"
               data-agent-panel="reviewer"
               aria-labelledby="reviewer-heading"
-              hidden
+              hidden=""
             >
               <header class="panel-heading">
                 <div class="agent-name">
@@ -404,8 +325,41 @@
               <div
                 class="event-list worker-events"
                 id="reviewer-events"
-                hidden
+                hidden=""
               ></div>
+              <div
+                id="reviewer-chat"
+                class="panel-chat-history"
+                aria-live="polite"
+              ></div>
+              <pre id="reviewer-progress" class="live-output" hidden=""></pre>
+              <form class="agent-chat-form" data-agent="reviewer">
+                <label class="sr-only" for="reviewer-input"
+                  >이 AI에게 질문</label
+                ><textarea
+                  id="reviewer-input"
+                  rows="2"
+                  maxlength="16000"
+                  placeholder="이 AI에게 질문하세요. 예: 방금 만든 함수가 어떻게 동작해?"
+                ></textarea>
+                <div class="agent-chat-actions">
+                  <span>프로젝트 질문 · 읽기 전용</span
+                  ><button
+                    type="button"
+                    class="stop-agent-chat"
+                    data-agent="reviewer"
+                    hidden=""
+                  >
+                    응답 중지</button
+                  ><button
+                    type="submit"
+                    class="send-agent-chat"
+                    data-agent="reviewer"
+                  >
+                    보내기 ↑
+                  </button>
+                </div>
+              </form>
               <div class="worker-footer">
                 <span id="reviewer-model-label">공급자 기본 모델</span
                 ><button class="text-button change-role" data-role="reviewer">
@@ -414,15 +368,115 @@
               </div>
             </section>
           </div>
-          <div class="review-return">
-            <span class="dispatch-tag">REVIEW ↑</span
-            ><span>기능·UI 담당 완료 보고</span><b>↑</b
-            ><span>컨트롤 타워 오류 검토</span><b>↺</b
-            ><span>문제를 만든 담당 AI에게 수정 요청</span><b>→</b
-            ><span>재검증 · 최종 역할별 검토</span>
+          <div class="dispatch" aria-label="작업 전달 흐름">
+            <span class="dispatch-tag">DISPATCH ↑</span
+            ><span>버전 명세 + UI 기준</span
+            ><span class="dispatch-arrow">↑</span
+            ><span>완성된 기능부터 UI 연결</span
+            ><span class="dispatch-pending" id="round-indicator"
+              >수정 라운드 —</span
+            >
+          </div>
+
+          <section class="terminal planner" aria-labelledby="planner-heading">
+            <header class="panel-heading">
+              <div class="agent-name">
+                <span class="agent-icon mint">G</span>
+                <div>
+                  <h2 id="planner-heading">
+                    <strong id="planner-provider">GPT</strong>
+                    <span>컨트롤 타워</span>
+                  </h2>
+                  <p>요구사항 · UX 설계 · 기능 명세 · UI 시안 지시</p>
+                </div>
+              </div>
+              <div class="panel-actions">
+                <button class="text-button change-role" data-role="gpt">
+                  AI 변경 ⇄</button
+                ><span class="status-pill" id="gpt-status">미연결</span
+                ><button class="subtle connect-shortcut">연결 설정 ↗</button>
+              </div>
+            </header>
+            <div class="terminal-body">
+              <p class="log-line">
+                <span class="log-label">SYSTEM</span> 명세 전달 → 기능별 완료
+                보고 → 컨트롤 타워 재검토 → 담당 AI 수정 → 재검증
+              </p>
+              <div class="empty-agent" id="planner-empty">
+                <span class="crosshair">＋</span>
+                <h3>이 폴더에서 함께 만듭니다.</h3>
+                <p>
+                  작업 폴더와 AI 계정을 연결하세요.<br />컨트롤 타워가 fun으로
+                  명세를 정리하고, 작업 보고를 받아 수정까지 조율합니다.
+                </p>
+                <button class="primary connect-shortcut">
+                  AI 연결 설정 <span>↗</span>
+                </button>
+              </div>
+              <div
+                id="planner-events"
+                class="event-list"
+                hidden=""
+                aria-live="polite"
+              ></div>
+              <div
+                id="gpt-chat"
+                class="panel-chat-history"
+                aria-live="polite"
+              ></div>
+              <pre id="gpt-progress" class="live-output" hidden=""></pre>
+            </div>
+            <div class="composer">
+              <label class="sr-only" for="planner-input"
+                >컨트롤 타워에게 요청</label
+              ><textarea
+                id="planner-input"
+                rows="3"
+                maxlength="16000"
+                placeholder="만들고 싶은 것을 설명하세요. 예: 시작·일시정지·초기화가 있는 타이머 앱을 만들어줘."
+              ></textarea>
+              <div class="composer-bottom">
+                <select id="controller-mode" aria-label="컨트롤 대화 모드">
+                  <option value="work">작업 요청</option>
+                  <option value="question">질문만</option>
+                </select>
+                <span>Enter 전송 · Shift+Enter 줄바꿈</span>
+                <div class="model-controls">
+                  <select id="gpt-model" aria-label="GPT 실행 모델">
+                    <option value="">GPT 모델 선택</option></select
+                  ><button id="model-button" class="model-button">
+                    목록 불러오기 ▾
+                  </button>
+                </div>
+                <div class="run-actions controller-send-actions">
+                  <button id="start-workflow" class="primary">
+                    작업 시작 →</button
+                  ><button id="stop-workflow" hidden="">작업 중지</button
+                  ><button id="stop-controller-chat" type="button" hidden>
+                    응답 중지
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p id="run-readiness" class="run-readiness">
+              폴더와 AI 연결을 확인한 뒤 시작할 수 있습니다. 검증 명령이 없으면
+              전체 완료로 표시하지 않습니다.
+            </p>
+          </section>
+
+          <div id="courier-layer" aria-hidden="true">
+            <img
+              id="courier"
+              src="assets/mascot.png"
+              alt=""
+              width="54"
+              height="54"
+              hidden=""
+            />
           </div>
         </div>
-        <section id="images-view" hidden aria-labelledby="image-heading">
+        <section id="images-view" hidden="" aria-labelledby="image-heading">
           <div class="image-layout">
             <div class="image-editor">
               <p class="eyebrow">DESIGN ARTIFACT</p>
@@ -437,7 +491,7 @@
                   id="image-prompt"
                   rows="11"
                   maxlength="12000"
-                  required
+                  required=""
                   placeholder="예: PC에서 사용하는 타이머 앱. 검은 배경, 큰 타이머 숫자, 시작·일시정지·초기화 버튼. 집중할 수 있는 간결한 구성."
                 ></textarea>
                 <div class="image-settings">
@@ -463,8 +517,8 @@
                   생성이 완료되면 현재 프로젝트에 저장됩니다.
                 </p>
               </div>
-              <img id="generated-image" hidden alt="생성된 UI 시안" />
-              <div class="image-result" id="image-result" hidden>
+              <img id="generated-image" hidden="" alt="생성된 UI 시안" />
+              <div class="image-result" id="image-result" hidden="">
                 <span>생성 완료 · 프로젝트에 저장됨</span
                 ><button id="export-image">PNG 내보내기 ↗</button>
               </div>
@@ -476,12 +530,62 @@
         <header>
           <strong>실행 현황</strong><span id="inspector-state">대기</span>
         </header>
+        <section
+          id="mascot-stage"
+          class="mascot-stage"
+          data-state="idle"
+          aria-label="캐릭터 작업 전달 상태"
+        >
+          <img
+            class="inspector-mascot"
+            src="assets/mascot.png"
+            alt="박스를 든 작업 캐릭터"
+            width="52"
+            height="52"
+          />
+          <div class="mascot-copy">
+            <span class="log-label">TASK COURIER</span>
+            <p class="mascot-message" role="status">
+              다음 작업을 기다리고 있어요.
+            </p>
+            <p class="mascot-event hint">
+              실제 작업 전달과 완료 보고에 맞춰 움직입니다.
+            </p>
+          </div>
+          <div class="mascot-route" aria-hidden="true">
+            <span class="mascot-role mascot-controller" data-mascot-role="gpt"
+              >컨트롤 타워 · GPT</span
+            ><span class="mascot-spine"></span
+            ><span class="mascot-branch"></span
+            ><span class="mascot-role mascot-feature" data-mascot-role="grok"
+              >기능 구현 · Grok</span
+            ><span class="mascot-role mascot-ui" data-mascot-role="claude"
+              >UI 구현·연결 · Claude</span
+            >
+            <div class="mascot-carrier">
+              <img
+                class="mascot-sprite"
+                src="assets/mascot.png"
+                alt=""
+                width="64"
+                height="64"
+              />
+            </div>
+          </div>
+          <button
+            class="text-button mascot-motion-toggle"
+            aria-pressed="true"
+            type="button"
+          >
+            움직임 끄기
+          </button>
+        </section>
         <ol id="inspector-tasks"></ol>
-        <details open>
+        <details open="">
           <summary>명세·결정</summary>
           <div id="inspector-requirements" class="hint"></div>
         </details>
-        <details open>
+        <details open="">
           <summary>사용자 검토 목록</summary>
           <ol id="inspector-review"></ol>
         </details>
@@ -489,6 +593,26 @@
           <summary>저장된 변경</summary>
           <ul id="inspector-changes"></ul>
         </details>
+        <section class="testing-inspector">
+          <header>
+            <strong>테스트 설계·실행</strong
+            ><span id="testing-status">미선택</span>
+          </header>
+          <p id="testing-summary" class="hint">
+            역할 설정에서 테스트를 체크하면 시나리오·코드·재현 절차를
+            준비합니다.
+          </p>
+          <ol id="testing-cases"></ol>
+          <div class="action-row">
+            <button id="show-test-report" class="text-button" hidden="">
+              결과·재현 절차 ↗</button
+            ><button id="rerun-tests" class="text-button" hidden="">
+              테스트 다시 실행</button
+            ><button id="test-permissions" class="text-button" hidden>
+              실행 권한 설정 ↗
+            </button>
+          </div>
+        </section>
       </aside>
     </div>
     <footer class="statusbar">
@@ -554,7 +678,7 @@
             <span>01 공식 로그인</span><span>→</span><span>02 권한 승인</span
             ><span>→</span><span>03 연결 완료</span>
           </div>
-          <div id="account-section" hidden>
+          <div id="account-section" hidden="">
             <label for="account-select">저장된 ChatGPT 계정</label
             ><select id="account-select"></select>
             <div class="account-actions">
@@ -571,7 +695,7 @@
           <div class="action-row">
             <button id="chatgpt-login" class="primary">
               Continue with ChatGPT <span>↗</span></button
-            ><button id="cancel-login" hidden>로그인 취소</button>
+            ><button id="cancel-login" hidden="">로그인 취소</button>
           </div>
         </section>
         <section class="connection-card codex-card">
@@ -597,7 +721,7 @@
               다른 계정 로그인 ↗</button
             ><button class="text-button" data-link="codex">설치 안내 ↗</button>
           </div>
-          <div id="codex-login-flow" hidden>
+          <div id="codex-login-flow" hidden="">
             <p class="hint">
               공식 브라우저에서 승인을 완료하세요. 앱은 비밀번호를 받지
               않습니다.
@@ -628,24 +752,24 @@
           </p>
           <div class="action-row">
             <button id="claude-login">연결하기 ↗</button
-            ><button id="claude-reauth" class="text-button" hidden>
+            ><button id="claude-reauth" class="text-button" hidden="">
               다시 로그인</button
             ><button id="refresh-status" class="text-button">
               상태 다시 확인</button
             ><button class="text-button" data-link="claude">설치 안내 ↗</button>
           </div>
-          <div id="claude-login-flow" class="cli-login-flow" hidden>
+          <div id="claude-login-flow" class="cli-login-flow" hidden="">
             <p class="hint">
               공식 브라우저에서 승인을 완료하면 자동으로 연결됩니다.
             </p>
             <div class="action-row">
-              <button id="claude-login-browser" hidden>
+              <button id="claude-login-browser" hidden="">
                 브라우저 다시 열기 ↗</button
               ><button id="claude-cancel-login" class="text-button">
                 로그인 취소
               </button>
             </div>
-            <form id="claude-code-form" hidden>
+            <form id="claude-code-form" hidden="">
               <label for="claude-code">브라우저에 표시된 승인 코드</label>
               <div class="key-input-row">
                 <input
@@ -653,7 +777,7 @@
                   type="password"
                   autocomplete="off"
                   spellcheck="false"
-                  required
+                  required=""
                   placeholder="승인 코드만 입력"
                 /><button type="submit">승인 코드 전달</button>
               </div>
@@ -677,7 +801,7 @@
           </p>
           <div class="action-row">
             <button id="grok-login">연결하기 ↗</button
-            ><button id="grok-reauth" class="text-button" hidden>
+            ><button id="grok-reauth" class="text-button" hidden="">
               다시 로그인</button
             ><button class="text-button" data-link="grok">설치 안내 ↗</button>
           </div>
@@ -695,18 +819,18 @@
               시작할 때 선택한 모델을 유지합니다.
             </p>
           </div>
-          <div id="grok-login-flow" class="cli-login-flow" hidden>
+          <div id="grok-login-flow" class="cli-login-flow" hidden="">
             <p class="hint">
               공식 브라우저에서 승인을 완료하면 자동으로 연결됩니다.
             </p>
             <div class="action-row">
-              <button id="grok-login-browser" hidden>
+              <button id="grok-login-browser" hidden="">
                 브라우저 다시 열기 ↗</button
               ><button id="grok-cancel-login" class="text-button">
                 로그인 취소
               </button>
             </div>
-            <form id="grok-code-form" hidden>
+            <form id="grok-code-form" hidden="">
               <label for="grok-code">브라우저에 표시된 승인 코드</label>
               <div class="key-input-row">
                 <input
@@ -714,7 +838,7 @@
                   type="password"
                   autocomplete="off"
                   spellcheck="false"
-                  required
+                  required=""
                   placeholder="승인 코드만 입력"
                 /><button type="submit">승인 코드 전달</button>
               </div>
@@ -758,7 +882,7 @@
             <button class="text-button" data-link="keys">API 키 발급 ↗</button
             ><button class="text-button" data-link="usage">
               API 사용 내역 ↗</button
-            ><button id="delete-key" class="text-button danger" hidden>
+            ><button id="delete-key" class="text-button danger" hidden="">
               저장된 키 삭제
             </button>
           </div>
@@ -777,14 +901,14 @@
           </p>
           <div class="action-row">
             <button id="gemini-login">Google 로그인 ↗</button
-            ><button id="gemini-install" class="subtle" hidden>
+            ><button id="gemini-install" class="subtle" hidden="">
               공식 Gemini CLI 설치</button
             ><button class="text-button" data-link="gemini">설치 안내 ↗</button>
           </div>
-          <div id="gemini-login-flow" class="cli-login-flow" hidden>
+          <div id="gemini-login-flow" class="cli-login-flow" hidden="">
             <p class="hint">Google 공식 브라우저에서 승인을 완료하세요.</p>
             <div class="action-row">
-              <button id="gemini-login-browser" hidden>
+              <button id="gemini-login-browser" hidden="">
                 브라우저 다시 열기 ↗</button
               ><button id="gemini-cancel-login" class="text-button">
                 로그인 취소
@@ -817,7 +941,12 @@
         <p class="eyebrow">PROJECT</p>
         <h2 id="project-dialog-title">새 프로젝트</h2>
         <label for="project-name">프로젝트 이름</label
-        ><input id="project-name" maxlength="80" required autocomplete="off" />
+        ><input
+          id="project-name"
+          maxlength="80"
+          required=""
+          autocomplete="off"
+        />
         <div class="action-row">
           <button type="button" id="cancel-project">취소</button
           ><button type="submit" class="primary">저장</button>
@@ -861,8 +990,8 @@
           권한으로 실행됩니다.
         </p>
         <label class="check-label"
-          ><input id="folder-consent-check" type="checkbox" required />이 폴더와
-          하위 폴더의 프로젝트 작업에 동의합니다.</label
+          ><input id="folder-consent-check" type="checkbox" required="" />이
+          폴더와 하위 폴더의 프로젝트 작업에 동의합니다.</label
         >
         <div class="action-row">
           <button type="button" id="cancel-folder-consent">취소</button
@@ -872,7 +1001,11 @@
         </div>
       </form>
     </dialog>
-    <dialog id="files-dialog" aria-labelledby="files-title">
+    <dialog
+      id="files-dialog"
+      aria-labelledby="files-title"
+      data-advanced="file-preview"
+    >
       <div class="dialog-heading">
         <div>
           <p class="eyebrow">PROJECT FILES</p>
@@ -896,7 +1029,7 @@
         </div>
       </div>
     </dialog>
-    <div id="toast" class="toast" role="status" hidden></div>
+    <div id="toast" class="toast" role="status" hidden=""></div>
     <dialog id="usage-dialog" aria-labelledby="usage-title">
       <header class="dialog-heading">
         <div>
@@ -941,7 +1074,7 @@
         <label class="agent-count-label" for="agent-count"
           >작업 패널 수<select id="agent-count">
             <option value="2">2개 · 컨트롤 + 통합 작업</option>
-            <option value="3" selected>3개 · 컨트롤 + 2개 작업</option>
+            <option value="3" selected="">3개 · 컨트롤 + 2개 작업</option>
             <option value="4">4개 · 컨트롤 + 3개 작업</option>
           </select></label
         >
@@ -959,6 +1092,136 @@
           </button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+      <form id="settings-form">
+        <header class="dialog-heading">
+          <div>
+            <p class="eyebrow">WORKSPACE SETTINGS</p>
+            <h2 id="settings-title">작업 환경 설정</h2>
+            <p id="settings-intro" class="hint">
+              변경 사항은 다음 작업부터 적용됩니다.
+            </p>
+          </div>
+          <button
+            id="close-settings"
+            class="icon-button"
+            type="button"
+            aria-label="설정 닫기"
+          >
+            ✕
+          </button>
+        </header>
+        <div class="settings-content">
+          <section>
+            <h3>작업 자동화</h3>
+            <div id="settings-work-controls" class="settings-fields">
+              <label
+                >자동 수정 최대 횟수<input
+                  id="max-repair-rounds"
+                  required
+                  type="number"
+                  min="0"
+                  max="20"
+                  value="2"
+                  placeholder="직접 설정"
+                  aria-label="자동 수정 최대 횟수" /></label
+              ><label
+                >검증 npm 스크립트<input
+                  id="validation-script"
+                  type="text"
+                  maxlength="80"
+                  placeholder="예: test"
+                  aria-label="검증 npm 스크립트" /></label
+              ><label class="check-label unattended-option"
+                ><input id="unattended-mode" type="checkbox" checked="" />미정
+                사항은 가정·검토 목록으로 기록</label
+              >
+            </div>
+            <p class="hint">
+              테스트 역할 선택 시 명세의 시나리오를 실제 테스트 코드와
+              연결합니다. 기본 실행기는 Node.js 내장 테스트이며 패키지를 자동
+              설치하지 않습니다. npm 스크립트는 해당 실행기를 선택했을 때
+              사용합니다.
+            </p>
+          </section>
+          <section>
+            <h3>권한과 실행</h3>
+            <div id="settings-consents">
+              <label class="check-label"
+                ><input id="allow-execution" type="checkbox" />연결한 프로젝트의
+                테스트·검증 코드 실행에 동의</label
+              >
+            </div>
+            <p class="permission-note">
+              테스트·검증 코드는 현재 PC 사용자 권한으로 실행됩니다. 신뢰하는
+              프로젝트에서만 허용하세요. 폴더 접근·소스 전송 동의는 프로젝트마다
+              따로 받습니다. 체크하지 않아도 대화와 명세 작성은 사용할 수
+              있습니다.
+            </p>
+          </section>
+          <section>
+            <h3>터미널 화면</h3>
+            <label for="terminal-font-size"
+              >글자 크기<select id="terminal-font-size">
+                <option value="12">12px</option>
+                <option value="13">13px</option>
+                <option value="14">14px</option>
+                <option value="16">16px</option>
+                <option value="18">18px</option>
+              </select></label
+            ><label class="check-label"
+              ><input id="wrap-lines" type="checkbox" checked="" />긴 코드와
+              실행 출력 줄바꿈</label
+            >
+          </section>
+          <section>
+            <h3>현재 프로젝트 폴더</h3>
+            <div id="settings-folder-controls">
+              <section class="folderbar" aria-label="프로젝트 작업 폴더">
+                <span class="log-label">WORKSPACE</span
+                ><span id="folder-path">작업 폴더를 연결하세요.</span
+                ><span id="folder-permission" class="status-pill"
+                  >접근 동의 필요</span
+                >
+                <div class="folder-actions">
+                  <button id="choose-folder">폴더 연결</button
+                  ><button id="show-files" hidden="">파일 보기</button
+                  ><button id="open-folder" class="subtle" hidden="">
+                    탐색기 ↗</button
+                  ><button id="revoke-folder" class="text-button" hidden="">
+                    접근 해제
+                  </button>
+                </div>
+              </section>
+            </div>
+          </section>
+          <p id="settings-message" class="hint" role="status"></p>
+        </div>
+        <footer class="dialog-footer">
+          <span class="hint">인증정보는 계정·연결에서 관리합니다.</span
+          ><button id="save-settings" class="primary" type="submit">
+            설정 저장
+          </button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog id="test-report-dialog" aria-labelledby="test-report-title">
+      <header class="dialog-heading">
+        <div>
+          <p class="eyebrow">ACTUAL TEST REPORT</p>
+          <h2 id="test-report-title">테스트 결과·재현 절차</h2>
+        </div>
+        <button
+          id="close-test-report"
+          class="icon-button"
+          aria-label="테스트 보고서 닫기"
+        >
+          ✕
+        </button>
+      </header>
+      <pre id="test-report-content"></pre>
     </dialog>
   </body>
 </html>

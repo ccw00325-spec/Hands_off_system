@@ -1,3 +1,10 @@
+import {
+  conversationTree,
+  terminalFeed,
+  testingInspector,
+} from "./conversation-view.js";
+import { fillPreferences, readPreferences } from "./settings-view.js";
+import { quotaWindows } from "../core/quota-view.js";
 import { createMascot } from "./mascot.js";
 import { CAPABILITIES, SLOT_IDS, defaultTeam } from "../core/team.js";
 import {
@@ -24,6 +31,7 @@ let folderTicket = null,
 const ACTIVE_RUN = new Set([
   "planning",
   "building",
+  "testing",
   "validating",
   "reviewing",
   "repairing",
@@ -52,6 +60,14 @@ let roleAssignments = null,
   rolesDialogProjectId = null,
   roleSaving = false;
 let teamConfig = null;
+let preferences = null,
+  currentConversation = null,
+  conversationIndex = null,
+  conversationSerial = 0,
+  autoQuestion = false;
+const activeRuns = new Map(),
+  pendingChats = new Map(),
+  liveBuffers = new Map();
 
 function toast(message, type = "") {
   $("#toast").textContent = message;
@@ -126,11 +142,10 @@ function renderProjects(data) {
       updateReadiness();
     })
     .catch((error) => toast(error.message, "error"));
-  renderSidebarProjects(data, (id) => {
-    void call(api.selectProject(id))
-      .then(renderProjects)
-      .catch((error) => toast(error.message, "error"));
-  });
+  currentConversation = null;
+  conversationSerial++;
+  $("#conversation-title").textContent = "새 대화";
+  void refreshConversationIndex();
   $("#project-select").replaceChildren(
     ...data.items.map((project) => new Option(project.title, project.id)),
   );
@@ -142,6 +157,7 @@ function renderProjects(data) {
   linkedFolder = null;
   currentRun = null;
   void refreshWorkspace();
+  void loadConversation();
   const id = data.activeId;
   if (!resultImage)
     void call(api.latestImage(id))
@@ -439,12 +455,16 @@ $("#project-select").addEventListener("change", async (event) => {
     toast(error.message, "error");
   }
 });
-$("#new-project").addEventListener("click", () => {
-  editingProject = false;
-  $("#project-dialog-title").textContent = "새 프로젝트";
-  $("#project-name").value = "";
-  $("#project-dialog").showModal();
-});
+$("#new-project").addEventListener("click", () =>
+  busy($("#new-project"), "폴더 선택 중…", async () => {
+    const ticket = await call(api.chooseProjectFolder());
+    if (!ticket) return;
+    folderTicket = ticket;
+    $("#consent-path").textContent = ticket.root;
+    $("#folder-consent-check").checked = false;
+    $("#folder-consent").showModal();
+  }),
+);
 $("#edit-title").addEventListener("click", () => {
   editingProject = true;
   $("#project-dialog-title").textContent = "프로젝트 제목 편집";
@@ -564,13 +584,56 @@ async function initialize() {
     );
   } else {
     api.onEvent(async (event) => {
+      if (event.type === "chat-updated") {
+        if (event.projectId === projectData?.activeId) {
+          for (const id of SLOT_IDS) pendingChats.delete(id);
+          for (const job of event.pending ?? [])
+            pendingChats.set(job.agentId, job.conversationId);
+          if (event.conversationId === currentConversation?.id)
+            void loadConversation(currentConversation.id);
+          else void refreshConversationIndex();
+        }
+        return;
+      }
+      if (event.type === "agent-progress") {
+        if (
+          event.projectId !== projectData?.activeId ||
+          event.conversationId !== currentConversation?.id
+        )
+          return;
+        const key = currentConversation.id + ":" + event.agentId;
+        liveBuffers.set(
+          key,
+          (liveBuffers.get(key) ?? "") +
+            (event.command ? "$ " + event.command + "\n" : "") +
+            event.text,
+        );
+        const box = $("#" + event.agentId + "-progress");
+        if (box) {
+          box.textContent = liveBuffers.get(key).slice(-20000);
+          box.hidden = false;
+          box.scrollTop = box.scrollHeight;
+        }
+        return;
+      }
       if (event.type === "usage") {
         renderUsage(event.usage);
         return;
       }
       if (event.type === "workflow") {
-        if (event.projectId === projectData?.activeId)
+        activeRuns.set(event.projectId, event.state);
+        if (
+          event.projectId === projectData?.activeId &&
+          (!event.state.options.conversationId ||
+            event.state.options.conversationId === currentConversation?.id)
+        ) {
+          if (
+            currentConversation &&
+            event.state.options.conversationId === currentConversation.id
+          )
+            currentConversation.runId = event.state.id;
           renderWorkflow(event.state);
+        } else updateReadiness();
         const previous = usageRunStates.get(event.projectId);
         usageRunStates.set(event.projectId, event.state.status);
         if (
@@ -631,6 +694,9 @@ async function initialize() {
     });
     try {
       renderProjects(await call(api.projects()));
+      preferences = await call(api.preferences());
+      fillPreferences(preferences);
+      if (!preferences.onboardingComplete) $("#settings-dialog").showModal();
       const restored = await restoreSavedConnections();
       const status = await refreshStatus();
       $("#footer-status").textContent =
@@ -640,7 +706,13 @@ async function initialize() {
         status.claude.connected ||
         status.grok.connected ||
         status.gemini.connected;
-      if (restored?.session.firstLaunch && !connected) openConnections();
+      if (
+        preferences.onboardingComplete &&
+        !$("#settings-dialog").open &&
+        restored?.session.firstLaunch &&
+        !connected
+      )
+        openConnections();
       renderUsage(await call(api.usage()));
       void refreshUsage(false);
     } catch (error) {
@@ -650,47 +722,60 @@ async function initialize() {
 }
 
 function updateReadiness() {
-  const active = ACTIVE_RUN.has(currentRun?.status);
-  const account = connection?.accounts.find(
-    (item) => item.active && item.planEnabled,
-  );
-  const missing = [];
-  if (!linkedFolder) missing.push("작업 폴더 연결");
-  if (
-    !roleAssignments ||
-    rolesProjectId !== projectData?.activeId ||
-    roleSaving
-  )
-    missing.push("역할 배치 확인");
-  for (const agent of teamConfig ?? []) {
+  const active =
+    ACTIVE_RUN.has(activeRuns.get(projectData?.activeId)?.status) ||
+    ACTIVE_RUN.has(currentRun?.status);
+  const mode = $("#controller-mode");
+  mode.querySelector("option[value=work]").disabled = active;
+  if (active && mode.value === "work") {
+    mode.value = "question";
+    autoQuestion = true;
+  } else if (!active && autoQuestion) {
+    mode.value = "work";
+    autoQuestion = false;
+  }
+  const question = mode.value === "question";
+  const needed = [];
+  if (!linkedFolder) needed.push("프로젝트 폴더 연결");
+  if (!teamConfig || roleSaving) needed.push("역할 배치 확인");
+  const participants = question
+    ? (teamConfig ?? []).slice(0, 1)
+    : (teamConfig ?? []);
+  for (const agent of participants) {
     const provider = agent.provider;
     if (provider === "gpt") {
-      if (!connection?.gpt.connected) missing.push("GPT 로그인");
+      if (!connection?.gpt.connected) needed.push("GPT 로그인");
       if (
         connection?.gpt.source === "api" &&
         !agent.modelId &&
         !$("#gpt-model").value
       )
-        missing.push("GPT 모델 선택");
+        needed.push("GPT 모델 선택");
     } else {
       if (!connection?.[provider]?.connected)
-        missing.push(`${AI_NAMES[provider]} 로그인`);
+        needed.push(AI_NAMES[provider] + " 로그인");
       if (
         ["grok", "gemini"].includes(provider) &&
         !agent.modelId &&
         !connection?.[provider]?.modelId
       )
-        missing.push(`${AI_NAMES[provider]} 모델 선택`);
+        needed.push(AI_NAMES[provider] + " 모델 선택");
     }
   }
-  $("#start-workflow").disabled = active || missing.length > 0;
+  const pending = pendingChats.get("gpt") === currentConversation?.id;
+  $("#stop-controller-chat").hidden = !pending;
+  $("#start-workflow").disabled =
+    needed.length > 0 || pending || !$("#planner-input").value.trim();
+  $("#start-workflow").textContent = question ? "질문 보내기 ↑" : "작업 요청 ↑";
   $("#stop-workflow").hidden = !active;
   $("#choose-folder").disabled = active;
-  $("#run-readiness").textContent = active
-    ? "작업 중입니다. 완료 보고와 컨트롤 타워 검토 결과를 위아래 패널에서 확인하세요. 역할 변경은 다음 작업부터 적용됩니다."
-    : missing.length
-      ? `시작 전 필요: ${missing.join(" · ")}`
-      : "자동 수정 한도를 직접 설정하세요. 검증 명령이 없으면 전체 완료로 표시하지 않습니다.";
+  $("#run-readiness").textContent = needed.length
+    ? "연결 필요: " + [...new Set(needed)].join(" · ")
+    : active
+      ? "작업 진행 중 · 질문은 별도 응답합니다. 변경 요청은 작업 종료 또는 중지 후 보낼 수 있습니다."
+      : question
+        ? "프로젝트 질문 · 파일을 수정하지 않는 대화입니다."
+        : "Enter로 작업 요청 · 실행 권한과 자동 수정은 우측 상단 설정에서 관리합니다.";
   $("#generate-image").disabled =
     !connection?.image.saved || !linkedFolder || generationProject !== null;
 }
@@ -721,7 +806,10 @@ async function refreshWorkspace() {
     $("#choose-folder").textContent = "폴더 변경";
     renderFileList(tree);
     const run = await call(api.workflow(id));
-    if (projectData.activeId === id) renderWorkflow(run);
+    if (projectData.activeId === id) {
+      activeRuns.set(id, run);
+      if (currentConversation) void loadConversation(currentConversation.id);
+    }
   } catch (error) {
     if (projectData.activeId !== id) return;
     pill("#folder-permission", "접근 확인 필요");
@@ -765,6 +853,7 @@ function renderFileList(tree) {
   }
 }
 const RUN_LABELS = {
+  testing: "테스트 코드 작성 중",
   planning: "명세 작성 중",
   building: "기능·UI 구현 중",
   validating: "검증 실행 중",
@@ -789,67 +878,7 @@ function renderWorkflow(run) {
   $("#round-indicator").textContent = run
     ? `수정 ${run.round} / ${run.options.maxRepairRounds}회`
     : "수정 라운드 —";
-  for (const actor of SLOT_IDS) {
-    const selector = actor === "gpt" ? "planner" : actor;
-    const events =
-      run?.events
-        .filter(
-          (event) =>
-            event.actor === actor ||
-            (actor === "gpt" && event.actor === "system"),
-        )
-        .slice(-80) ?? [];
-    $(`#${selector}-empty`).hidden = events.length > 0;
-    const container = $(`#${selector}-events`);
-    container.hidden = !events.length;
-    container.replaceChildren();
-    for (const event of events) {
-      const row = document.createElement("div");
-      row.className = "event-row";
-      const time = document.createElement("span");
-      time.className = "event-time";
-      time.textContent = new Date(event.at).toLocaleTimeString("ko-KR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
-      const content = document.createElement("div");
-      const title = document.createElement("p");
-      title.textContent = `${event.actor === "system" ? "" : AI_NAMES[run.options.team?.find((agent) => agent.id === actor)?.provider ?? run.options.roles?.[actor] ?? actor] + " · "}${event.message}`;
-      content.append(title);
-      if (event.questions?.length) {
-        const details = document.createElement("pre");
-        details.textContent = event.questions.join("\n");
-        content.append(details);
-      }
-      if (event.issues?.length) {
-        const details = document.createElement("pre");
-        details.textContent = event.issues
-          .map(
-            (issue) =>
-              `${ROLE_LABELS[issue.owner]} · ${AI_NAMES[run.options.roles?.[issue.owner] ?? issue.owner]} · ${issue.description}`,
-          )
-          .join("\n");
-        content.append(details);
-      }
-      row.append(time, content);
-      container.append(row);
-    }
-    container.scrollTop = container.scrollHeight;
-    if (actor !== "gpt" && run) {
-      const tasks = run.tasks.filter((task) => task.owner === actor);
-      const working = tasks.some((task) => task.status === "working");
-      pill(
-        `#${actor}-status`,
-        working
-          ? "수행 중"
-          : `${tasks.filter((task) => task.status === "reported").length}/${tasks.length} 보고됨`,
-        !working &&
-          tasks.length > 0 &&
-          tasks.every((task) => task.status === "reported"),
-      );
-    }
-  }
+  renderConversationPanels(run);
   renderAssignedRoles();
   if (run?.status === "needs_input")
     $("#run-readiness").textContent =
@@ -912,20 +941,33 @@ $("#show-files").addEventListener("click", () =>
 );
 $("#close-files").addEventListener("click", () => $("#files-dialog").close());
 $("#start-workflow").addEventListener("click", () =>
-  busy($("#start-workflow"), "시작 중…", async () => {
-    const value = $("#max-repair-rounds").value;
-    if (value === "") throw new Error("자동 수정 최대 횟수를 직접 설정하세요.");
-    const options = {
-      request: $("#planner-input").value,
-      gptModel: $("#gpt-model").value,
-      maxRepairRounds: Number(value),
-      validationScript: $("#validation-script").value.trim(),
-      allowExecution: $("#allow-execution").checked,
-      unattended: $("#unattended-mode").checked,
-    };
-    renderWorkflow(
-      await call(api.startWorkflow(projectData.activeId, options)),
+  busy($("#start-workflow"), "전송 중…", async () => {
+    const projectId = projectData.activeId;
+    if (!currentConversation) await loadConversation();
+    const conversationId = currentConversation.id;
+    const message = $("#planner-input").value.trim();
+    if (!message) return;
+    const result = await call(
+      api.sendMessage(
+        projectId,
+        conversationId,
+        "gpt",
+        message,
+        $("#controller-mode").value,
+      ),
     );
+    $("#planner-input").value = "";
+    if (result.state) {
+      activeRuns.set(projectId, result.state);
+      if (
+        projectData.activeId === projectId &&
+        currentConversation?.id === conversationId
+      ) {
+        currentConversation.runId = result.state.id;
+        renderWorkflow(result.state);
+      }
+    }
+    await loadConversation(conversationId);
   }),
 );
 $("#stop-workflow").addEventListener("click", () =>
@@ -1076,12 +1118,14 @@ const usageNames = {
   claude: "Claude · 공식 /usage",
   grok: "Grok · Cursor 계정 사용 한도",
   codex: "Codex CLI · 별도 계정 참고 한도",
+  gemini: "Gemini · 공식 한도 확인",
 };
 const usageLinks = {
   gpt: "gptUsage",
   claude: "claudeUsage",
   grok: "cursorUsage",
   codex: "codexUsage",
+  gemini: "gemini",
 };
 function displayedUsage(provider) {
   if (provider === "gpt" && connection?.gpt.source === "codex") {
@@ -1096,7 +1140,15 @@ function displayedUsage(provider) {
         ),
     };
   }
-  return usageData.providers[provider];
+  return (
+    usageData.providers[provider] ?? {
+      state: "unsupported",
+      meters: [],
+      remainingPercent: null,
+      message:
+        "이 경로에서 확인된 5시간·주간 잔여 비율이 없습니다. 공식 안내에서 계정 한도를 확인하세요.",
+    }
+  );
 }
 function renderUsage(value) {
   usageData = value;
@@ -1110,23 +1162,28 @@ function renderUsage(value) {
   $("[data-usage=codex] small").textContent = nativeGpt
     ? "GPT와 동일 출처"
     : "별도 계정 · 참고";
-  for (const provider of ["gpt", "claude", "grok", "codex"]) {
+  for (const provider of ["gpt", "claude", "grok", "gemini", "codex"]) {
     const data = displayedUsage(provider);
     const numeric =
       typeof data.remainingPercent === "number" &&
       Number.isFinite(data.remainingPercent) &&
       data.remainingPercent >= 0 &&
       data.remainingPercent <= 100;
-    $(`#quota-${provider}`).textContent = numeric
-      ? `${data.remainingPercent}% 잔여`
+    const windows = quotaWindows(data);
+    $("#quota-" + provider).textContent = windows.available
+      ? windows.text
       : data.state === "unsupported"
         ? "조회 미지원"
-        : data.state === "not-connected"
-          ? "연결 필요"
-          : "—";
+        : "—/—";
     const button = $(`[data-usage=${provider}]`);
+    button.hidden =
+      provider === "codex"
+        ? nativeGpt
+        : teamConfig
+          ? !teamConfig.some((agent) => agent.provider === provider)
+          : false;
     button.classList.toggle("has-quota", numeric);
-    button.title = `${data.message}${data.checkedAt ? " · " + new Date(data.checkedAt).toLocaleTimeString("ko-KR") : ""}`;
+    button.title = `5시간 / 주간 · ${data.message}${data.checkedAt ? " · " + new Date(data.checkedAt).toLocaleTimeString("ko-KR") : ""}`;
     button.setAttribute(
       "aria-label",
       `${usageNames[provider]} ${$(`#quota-${provider}`).textContent}`,
@@ -1230,6 +1287,7 @@ setInterval(() => {
     void refreshUsage(false);
 }, 60000);
 function renderAssignedRoles() {
+  if (usageData) renderUsage(usageData);
   const selected = ACTIVE_RUN.has(currentRun?.status)
     ? (currentRun.options.team ?? defaultTeam(currentRun.options.roles))
     : teamConfig;
@@ -1255,6 +1313,8 @@ function renderAssignedRoles() {
       pill("#" + agent.id + "-status", ready ? "연결됨" : "연결 필요", ready);
     else if (agent.id === "gpt")
       pill("#gpt-status", RUN_LABELS[currentRun.status] ?? "작업 중", true);
+    if (pendingChats.get(agent.id) === currentConversation?.id)
+      pill("#" + agent.id + "-status", "응답 중", false);
     if (agent.id !== "gpt") {
       const panel = document.querySelector(
         '[data-agent-panel="' + agent.id + '"]',
@@ -1460,10 +1520,7 @@ function viewSidebarFile(path) {
   });
 }
 $("#sidebar-file-search").addEventListener("input", () =>
-  renderSidebarFiles(linkedFolder, viewSidebarFile),
-);
-$("#sidebar-new-project").addEventListener("click", () =>
-  $("#new-project").click(),
+  renderConversationTree(),
 );
 function toggleSidebar() {
   const visible =
@@ -1485,6 +1542,17 @@ $("#planner-input").addEventListener("keydown", (event) => {
     $("#model-button").click();
   }
 });
+$("#planner-input").addEventListener("keydown", (event) => {
+  if (
+    event.key === "Enter" &&
+    !event.shiftKey &&
+    !event.isComposing &&
+    !event.defaultPrevented
+  ) {
+    event.preventDefault();
+    if (!$("#start-workflow").disabled) $("#start-workflow").click();
+  }
+});
 document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
   if (event.key === "Enter" && !document.querySelector("dialog[open]")) {
@@ -1496,6 +1564,207 @@ document.addEventListener("keydown", (event) => {
     toggleSidebar();
   }
 });
+
+function renderConversationTree() {
+  if (!projectData) return;
+  conversationTree(projectData, conversationIndex, currentConversation?.id, {
+    project: async (id) => {
+      try {
+        renderProjects(await call(api.selectProject(id)));
+      } catch (error) {
+        toast(error.message, "error");
+      }
+    },
+    conversation: async (id, conversationId) => {
+      try {
+        if (projectData.activeId !== id)
+          renderProjects(await call(api.selectProject(id)));
+        await loadConversation(conversationId);
+      } catch (error) {
+        toast(error.message, "error");
+      }
+    },
+    create: createConversation,
+  });
+}
+async function refreshConversationIndex() {
+  try {
+    conversationIndex = await call(api.conversationIndex());
+    renderConversationTree();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+async function loadConversation(id) {
+  if (!projectData) return;
+  const projectId = projectData.activeId;
+  const serial = ++conversationSerial;
+  try {
+    const data = await call(api.conversation(projectId, id));
+    if (projectData.activeId !== projectId || serial !== conversationSerial)
+      return;
+    currentConversation = data.conversation;
+    $("#conversation-title").textContent = currentConversation.title;
+    renderWorkflow(data.run);
+    await refreshConversationIndex();
+  } catch (error) {
+    if (serial === conversationSerial) toast(error.message, "error");
+  }
+}
+async function createConversation(projectId = projectData.activeId) {
+  try {
+    if (projectData.activeId !== projectId)
+      renderProjects(await call(api.selectProject(projectId)));
+    const data = await call(api.createConversation(projectId));
+    await loadConversation(data.id);
+    $("#planner-input").focus();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+function renderConversationPanels(run) {
+  for (const actor of SLOT_IDS) {
+    const provider =
+      AI_NAMES[
+        (run?.options?.team ?? teamConfig)?.find((agent) => agent.id === actor)
+          ?.provider
+      ] ?? "AI";
+    const events =
+      run?.events?.filter(
+        (event) =>
+          event.actor === actor ||
+          (actor === "gpt" && event.actor === "system"),
+      ) ?? [];
+    const messages =
+      currentConversation?.messages.filter(
+        (message) => message.agentId === actor,
+      ) ?? [];
+    const count = terminalFeed(
+      $(actor === "gpt" ? "#planner-events" : "#" + actor + "-events"),
+      events,
+      messages,
+      provider,
+    );
+    $("#" + (actor === "gpt" ? "planner" : actor) + "-empty").hidden =
+      count > 0;
+    const pending = pendingChats.get(actor) === currentConversation?.id;
+    if (actor !== "gpt") {
+      const button = document.querySelector(
+        '.send-agent-chat[data-agent="' + actor + '"]',
+      );
+      button.disabled = pending || !linkedFolder;
+      document.querySelector(
+        '.stop-agent-chat[data-agent="' + actor + '"]',
+      ).hidden = !pending;
+    }
+    const progress = $("#" + actor + "-progress");
+    const buffer = liveBuffers.get(currentConversation?.id + ":" + actor);
+    progress.hidden = !buffer;
+    if (buffer) progress.textContent = buffer.slice(-20000);
+    if (actor !== "gpt" && run) {
+      const tasks = run.tasks.filter((task) => task.owner === actor);
+      pill(
+        "#" + actor + "-status",
+        pending
+          ? "응답 중"
+          : tasks.some((task) => task.status === "working")
+            ? "작업 중"
+            : tasks.filter((task) => task.status === "reported").length +
+              "/" +
+              tasks.length +
+              " 보고",
+        false,
+      );
+    }
+  }
+  testingInspector(run);
+}
+$("#new-conversation").addEventListener("click", () => createConversation());
+for (const form of document.querySelectorAll(".agent-chat-form")) {
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const actor = form.dataset.agent;
+    void busy(form.querySelector(".send-agent-chat"), "전송 중…", async () => {
+      if (!currentConversation) await loadConversation();
+      const input = $("#" + actor + "-input");
+      const message = input.value.trim();
+      if (!message) return;
+      await call(
+        api.sendMessage(
+          projectData.activeId,
+          currentConversation.id,
+          actor,
+          message,
+          "question",
+        ),
+      );
+      input.value = "";
+      await loadConversation(currentConversation.id);
+    });
+  });
+  form.querySelector("textarea").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
+}
+document
+  .querySelectorAll(".stop-agent-chat")
+  .forEach((button) =>
+    button.addEventListener("click", () =>
+      call(api.stopMessage(projectData.activeId, button.dataset.agent)),
+    ),
+  );
+$("#planner-input").addEventListener("input", updateReadiness);
+$("#controller-mode").addEventListener("change", () => {
+  autoQuestion = false;
+  updateReadiness();
+});
+$("#open-settings").addEventListener("click", async () => {
+  preferences = await call(api.preferences());
+  fillPreferences(preferences);
+  $("#settings-dialog").showModal();
+});
+$("#close-settings").addEventListener("click", () =>
+  $("#settings-dialog").close(),
+);
+$("#settings-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void busy($("#save-settings"), "저장 중…", async () => {
+    preferences = await call(api.savePreferences(readPreferences()));
+    fillPreferences(preferences);
+    $("#settings-dialog").close();
+    toast("작업 환경 설정을 저장했습니다.");
+    updateReadiness();
+  });
+});
+$("#show-test-report").addEventListener("click", () =>
+  busy($("#show-test-report"), "불러오는 중…", async () => {
+    $("#test-report-content").textContent =
+      (currentRun?.testing?.stale
+        ? "이전 실행 결과입니다. 소스 변경 후 재검증 전까지 현재 코드의 통과로 인정하지 않습니다.\n\n"
+        : "") +
+      (await call(api.testReport(projectData.activeId, currentRun.id)));
+    $("#test-report-dialog").showModal();
+  }),
+);
+$("#stop-controller-chat").addEventListener("click", () =>
+  call(api.stopMessage(projectData.activeId, "gpt")),
+);
+$("#close-test-report").addEventListener("click", () =>
+  $("#test-report-dialog").close(),
+);
+$("#test-permissions").addEventListener("click", () =>
+  $("#open-settings").click(),
+);
+$("#rerun-tests").addEventListener("click", () =>
+  busy($("#rerun-tests"), "실행 중…", async () => {
+    renderWorkflow(
+      await call(api.rerunTests(projectData.activeId, currentRun.id)),
+    );
+  }),
+);
 let renderedGptSource = null;
 function renderCodexConnection(status) {
   const cli = status.codex;

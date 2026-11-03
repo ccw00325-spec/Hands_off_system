@@ -5,7 +5,11 @@ import { PassThrough, Writable } from "node:stream";
 import { mkdtemp, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodexConnection, codexExecArgs } from "../src/core/codex.js";
+import {
+  CodexConnection,
+  codexExecArgs,
+  codexFailure,
+} from "../src/core/codex.js";
 
 function mockServer() {
   return {
@@ -36,6 +40,29 @@ function mockServer() {
     },
   };
 }
+test("public native failure categories never echo provider body or arbitrary secret-like codes", () => {
+  const body = "private-prompt-and-key-sentinel";
+  assert.match(
+    codexFailure({
+      error: { code: "rate_limit_exceeded", message: "429 " + body },
+    }),
+    /사용 한도/,
+  );
+  assert.ok(
+    !codexFailure({
+      error: { code: "sk-secret-sentinel", message: body },
+    }).includes(body),
+  );
+  assert.ok(
+    !codexFailure({
+      error: { code: "sk-secret-sentinel", message: body },
+    }).includes("sk-secret"),
+  );
+  assert.match(
+    codexFailure({ message: "503 stream disconnected " + body }),
+    /연결/,
+  );
+});
 test("native Codex uses official auth metadata, real model ids and cancels only its pending attempt", async () => {
   let opened;
   const rpc = mockServer();

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { teamFor, CAPABILITIES } from "./team.js";
+import { validateTestPlan } from "./test-plan.js";
 const required = (value, label) => {
   if (
     typeof value !== "string" ||
@@ -10,7 +11,7 @@ const required = (value, label) => {
     throw new Error(`Fun 명세 누락: ${label}`);
   return value.trim();
 };
-export const FUN_CONTRACT = `Return JSON with contractVersion:1, version:"1.0.0", questions:[], requirements:[{id:"R1",title,context,trigger,reaction,acceptanceCriteria:["observable test"]}], decisions:[{id,description,source:"user" or "assumption"}], reviewItems:[{description,critical:false}], design:{screens:[{name,layout,states:["idle","running","error"]}],palette:["color purpose"],spacing:"spacing rules",typography:"font rules"}, tasks:[{id,title,owner:"EXACT team panel id",kind:"feature" or "ui" or "debug",requirementIds:["R1"],instructions,acceptanceCriteria:["testable result"],dependsOn:[]}]. Every requirement needs explicit Context + Trigger -> Reaction and testable criteria, and at least one task must cover it. Assign tasks ONLY to a team panel that has the matching kind role. Multiple roles per panel and duplicate roles across panels are allowed. Panel ids are routing keys, NOT AI vendor names. The team is supplied in options.team. Never invent permissions, account access, successful tests or user decisions. When unattended is true, choose reversible implementation details, record every assumption, and put noncritical decisions in reviewItems instead of asking the user. Critical missing permission or unsafe/irreversible scope must return questions and no tasks. Workers never receive the full fun skill.`;
+export const FUN_CONTRACT = `Return JSON with contractVersion:1, version:"1.0.0", questions:[], requirements:[{id:"R1",title,context,trigger,reaction,acceptanceCriteria:["observable test"]}], decisions:[{id,description,source:"user" or "assumption"}], reviewItems:[{description,critical:false}], design:{screens:[{name,layout,states:["idle","running","error"]}],palette:["color purpose"],spacing:"spacing rules",typography:"font rules"}, tasks:[{id,title,owner:"EXACT team panel id",kind:"feature" or "ui" or "debug" or "test",requirementIds:["R1"],instructions,acceptanceCriteria:["testable result"],dependsOn:[]}]. Every requirement needs explicit Context + Trigger -> Reaction and testable criteria, and at least one task must cover it. Assign tasks ONLY to a team panel that has the matching kind role. Multiple roles per panel and duplicate roles across panels are allowed. Panel ids are routing keys, NOT AI vendor names. The team is supplied in options.team. Never invent permissions, account access, successful tests or user decisions. When unattended is true, choose reversible implementation details, record every assumption, and put noncritical decisions in reviewItems instead of asking the user. Critical missing permission or unsafe/irreversible scope must return questions and no tasks. When a team panel has the test role, include testPlan:{runner:"node-test" (preferred) or "npm",files:["tests/app.test.cjs"],cases:[{id:"T1",requirementId:"R1",type:"unit" or "integration" or "e2e",title,given,when,expected,steps:["exact reproduction step"]}]}. Cover EVERY requirement with meaningful assertions, include normal and applicable error/boundary cases. Every automated test name MUST begin with its case id (e.g. T1) so the host can verify that each planned test actually ran. Use built-in node:test/assert and no new dependencies unless already installed. An unavailable browser/framework must be reported as a limitation, not a passing test. For multiple test tasks, provide task.testFiles as disjoint subsets covering testPlan.files. Test tasks depend on implementation, can only edit their assigned test files, and cannot weaken implementation or change acceptance criteria to make tests pass. Workers never receive the full fun skill.`;
 export function skillHash(text) {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -102,7 +103,7 @@ export function compileFunPlan(plan, options) {
     const agent = team.find((row) => row.id === task.owner);
     if (
       !agent ||
-      !["feature", "ui", "debug"].includes(task.kind) ||
+      !["feature", "ui", "debug", "test"].includes(task.kind) ||
       !agent.roles.includes(task.kind)
     )
       throw new Error("Fun 작업 종류가 배정된 패널 역할과 다릅니다.");
@@ -116,6 +117,43 @@ export function compileFunPlan(plan, options) {
   }
   if ([...ids].some((id) => !covered.has(id)))
     throw new Error("Fun 명세의 일부 기능에 구현 작업이 없습니다.");
+  const testing = team.some((agent) => agent.roles.includes("test"));
+  const testTasks = plan.tasks.filter((task) => task.kind === "test");
+  if (testing && !testTasks.length)
+    throw new Error(
+      "테스트 역할을 선택했습니다. 테스트 코드 작성 작업이 필요합니다.",
+    );
+  if (!testing && testTasks.length)
+    throw new Error("테스트 역할을 배정한 패널이 없습니다.");
+  const testPlan = testing
+    ? validateTestPlan(plan.testPlan, requirements)
+    : null;
+  if (testPlan) {
+    const implementation = plan.tasks
+      .filter((task) => task.kind !== "test")
+      .map((task) => task.id);
+    for (const task of testTasks)
+      task.dependsOn = [...new Set([...task.dependsOn, ...implementation])];
+  }
+  if (testPlan) {
+    const assigned = new Set();
+    for (const task of testTasks) {
+      task.testFiles ??= testTasks.length === 1 ? [...testPlan.files] : [];
+      if (
+        !Array.isArray(task.testFiles) ||
+        !task.testFiles.length ||
+        task.testFiles.some(
+          (path) => !testPlan.files.includes(path) || assigned.has(path),
+        )
+      )
+        throw new Error(
+          "여러 테스트 담당자는 서로 다른 테스트 파일을 맡아야 합니다.",
+        );
+      for (const path of task.testFiles) assigned.add(path);
+    }
+    if (testPlan.files.some((path) => !assigned.has(path)))
+      throw new Error("담당자가 없는 테스트 코드 파일이 있습니다.");
+  }
   const spec = [
     `# 기능 명세 · v${version}`,
     `\n## 결정 기록`,
@@ -159,5 +197,6 @@ export function compileFunPlan(plan, options) {
     reviewItems,
     design: { screens, palette, spacing, typography },
     spec,
+    testPlan,
   };
 }

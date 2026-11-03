@@ -27,12 +27,20 @@ export class Projects {
     this.queue = operation.catch(() => {});
     return operation;
   }
-  create(title) {
+  create(title, workspace = null) {
     return this.mutate((data) => {
+      if (
+        workspace &&
+        data.items.some((item) => item.workspace?.root === workspace.root)
+      )
+        throw new Error(
+          "이 폴더는 이미 프로젝트에 연결되어 있습니다. 왼쪽에서 해당 프로젝트를 선택하세요.",
+        );
       const project = {
         id: randomUUID(),
         title: this.title(title),
         createdAt: new Date().toISOString(),
+        ...(workspace ? { workspace } : {}),
       };
       data.items.push(project);
       data.activeId = project.id;

@@ -15,6 +15,9 @@ export function nativeEnvironment(extra = {}) {
     "ELECTRON_EXTRA_LAUNCH_ARGS",
     "BASH_ENV",
     "ENV",
+    "NODE_TEST_CONTEXT",
+    "NODE_TEST_REPORTER",
+    "NODE_TEST_REPORTER_DESTINATION",
   ])
     delete env[name];
   return { ...env, ...extra };

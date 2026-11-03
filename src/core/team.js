@@ -10,6 +10,7 @@ export const CAPABILITIES = {
   ui: "UI 구현·연결",
   debug: "디버깅",
   review: "코드 검토",
+  test: "테스트 설계·실행",
 };
 export const SLOT_IDS = ["gpt", "grok", "claude", "reviewer"];
 export function validateModelId(value) {

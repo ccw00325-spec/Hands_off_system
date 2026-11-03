@@ -55,6 +55,46 @@ export function codexExecArgs(model) {
     "-",
   ];
 }
+export function codexFailure(event) {
+  const value = JSON.stringify(
+    event.error ?? event.message ?? event.code ?? "",
+  );
+  let message = "모델 응답을 완료하지 못했습니다.";
+  if (/429|rate.limit|usage.limit|quota|limit.reached/i.test(value))
+    message =
+      "Codex 사용 한도 또는 요청 빈도 제한입니다. 사용량을 확인한 뒤 다시 요청하세요.";
+  else if (/401|403|unauthoriz|authentication|permission/i.test(value))
+    message =
+      "Codex 인증 또는 모델 권한을 확인하지 못했습니다. 연결 상태를 다시 확인하세요.";
+  else if (
+    /500|502|503|504|capacity|overload|network|connection|stream|transport|timeout/i.test(
+      value,
+    )
+  )
+    message =
+      "Codex 공급자 연결이 끊기거나 일시적인 처리 오류가 발생했습니다. 저장된 작업은 유지됩니다.";
+  const code = event.error?.code ?? event.code;
+  return (
+    message +
+    (typeof code === "string" &&
+    [
+      "rate_limit_exceeded",
+      "usage_limit_reached",
+      "insufficient_quota",
+      "invalid_api_key",
+      "unauthorized",
+      "forbidden",
+      "model_not_found",
+      "server_error",
+      "internal_error",
+      "stream_disconnected",
+      "connection_error",
+      "overloaded_error",
+    ].includes(code)
+      ? ` (${code})`
+      : "")
+  );
+}
 export class CodexConnection {
   constructor(directory, notify = () => {}, dependencies = {}) {
     this.directory = directory;
@@ -306,8 +346,7 @@ export class CodexConnection {
               text = event.item.text ?? "";
             if (event.type === "turn.completed") completed = true;
             if (["turn.failed", "error"].includes(event.type))
-              failure =
-                "공급자 한도·모델 권한 또는 연결 문제로 Codex 작업이 실패했습니다.";
+              failure = codexFailure(event);
           } catch {}
         });
         child.stderr.on("data", () => {});

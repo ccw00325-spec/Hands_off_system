@@ -62,6 +62,7 @@ export function relativeFile(value, internal = false) {
         PRIVATE.test(part) ||
         [
           ".git",
+          ".runtime",
           ".codex",
           ".claude",
           ".gemini",
@@ -91,9 +92,21 @@ export class Workspace {
     this.tickets = new Map();
     this.queues = new Map();
   }
+  async privateRoot() {
+    if (!this.projects.store?.directory) return null;
+    return (this.privateDirectory ??= await realpath(
+      this.projects.store.directory,
+    ));
+  }
   async prepare(projectId, folder) {
-    this.projects.find(await this.projects.list(), projectId);
+    if (projectId !== null)
+      this.projects.find(await this.projects.list(), projectId);
     const root = await realpath(folder);
+    const privateRoot = await this.privateRoot();
+    if (privateRoot && inside(privateRoot, root))
+      throw new Error(
+        "앱의 대화·인증 데이터 폴더는 작업 폴더로 사용할 수 없습니다.",
+      );
     const info = await stat(root);
     if (!info.isDirectory() || root === parse(root).root)
       throw new Error("드라이브 전체 대신 프로젝트 폴더를 선택하세요.");
@@ -124,14 +137,23 @@ export class Workspace {
       String(info.ino) !== pending.ino
     )
       throw new Error("선택한 폴더가 바뀌었습니다. 다시 선택하세요.");
-    return this.projects.grant(projectId, {
+    const grant = {
       root: pending.root,
       dev: pending.dev,
       ino: pending.ino,
       deviceBinding: await this.identity(),
       grantId: randomUUID(),
       consentedAt: new Date().toISOString(),
-    });
+    };
+    if (projectId === null) {
+      const name = pending.root
+        .split(/[\\/]/)
+        .filter(Boolean)
+        .at(-1)
+        .slice(0, 80);
+      return this.projects.create(name, grant);
+    }
+    return this.projects.grant(projectId, grant);
   }
   async grant(projectId, expectedGrantId) {
     const data = await this.projects.list();
@@ -172,6 +194,11 @@ export class Workspace {
     let target = grant.root;
     for (let index = 0; index < parts.length; index++) {
       target = join(target, parts[index]);
+      const privateRoot = await this.privateRoot();
+      if (privateRoot && inside(privateRoot, target))
+        throw new Error(
+          "앱의 대화·설정 데이터에는 프로젝트 작업으로 접근할 수 없습니다.",
+        );
       try {
         const info = await lstat(target);
         if (info.isSymbolicLink() || (info.isFile() && info.nlink > 1))
@@ -259,6 +286,9 @@ export class Workspace {
         a.name.localeCompare(b.name),
       )) {
         if (SKIP.has(entry.name.toLowerCase()) || PRIVATE.test(entry.name))
+          continue;
+        const privateRoot = await this.privateRoot();
+        if (privateRoot && inside(privateRoot, join(directory, entry.name)))
           continue;
         const path = prefix ? `${prefix}/${entry.name}` : entry.name;
         if (files.length >= 500) {
