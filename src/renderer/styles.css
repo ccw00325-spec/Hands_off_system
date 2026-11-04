@@ -2714,3 +2714,62 @@ body[data-sidebar="off"] .workbench-shell {
     font-size: 10px;
   }
 }
+
+/* Keep the outside close control separate from the scrolling role panel. */
+#roles-dialog {
+  width: min(682px, calc(100vw - 24px));
+  max-width: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+  padding-right: 42px;
+}
+.roles-dialog-panel {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+#close-roles-outside {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+#first-run-tour {
+  width: min(420px, calc(100vw - 32px));
+  position: fixed;
+  inset: auto 16px 36px auto;
+  margin: 0;
+}
+#first-run-tour::backdrop {
+  background: rgb(0 0 0 / 38%);
+  backdrop-filter: none;
+}
+.tour-content {
+  padding: 20px 26px;
+  line-height: 1.6;
+}
+.tour-content .action-row {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.tour-target {
+  outline: 2px solid var(--mint, #83e4be);
+  outline-offset: 4px;
+}
+
+#checkpoints-dialog { width: min(620px, calc(100vw - 32px)); }
+#checkpoint-preview { max-height: 45vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+#work-usage-panels { overflow-wrap: anywhere; }
+
+.rollback-banner { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; color: #ffd585; background: #2b2215; border-bottom: 1px solid #6a512b; }
+.rollback-banner[hidden] { display: none; }
+.verified-card { margin: 0 0 12px; padding: 9px; display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 11px; }
+.image-canvas { position: relative; padding-top: 66px; }
+.image-provider-controls { position: absolute; top: 12px; right: 12px; left: 12px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.image-provider-controls label { display: flex; align-items: center; gap: 8px; }

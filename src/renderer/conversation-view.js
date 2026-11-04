@@ -195,6 +195,7 @@ export function testingInspector(run) {
   document.querySelector("#test-permissions").hidden =
     !testing?.result?.requiresConsent;
   document.querySelector("#rerun-tests").hidden =
+    run?.options?.mutation === true ||
     !testing?.result ||
     [
       "planning",

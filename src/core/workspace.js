@@ -10,6 +10,7 @@ import {
   rm,
 } from "node:fs/promises";
 import { resolve, relative, join, isAbsolute, parse, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID, createHash } from "node:crypto";
 import { deviceBinding } from "./device-binding.js";
 
@@ -236,7 +237,9 @@ export class Workspace {
     return readFile(target);
   }
   async write(projectId, file, content, options = {}) {
-    return this.serialize(projectId, async () => {
+    return this.serialize(projectId, () => this.writeUnlocked(projectId, file, content, options));
+  }
+  async writeUnlocked(projectId, file, content, options = {}) {
       const { target, grant } = await this.locate(projectId, file, {
         ...options,
         create: true,
@@ -259,18 +262,28 @@ export class Workspace {
         await handle.writeFile(content);
         await handle.close();
         handle = null;
-        await this.grant(projectId, grant.grantId);
-        await this.locate(projectId, file, {
-          ...options,
-          grantId: grant.grantId,
-        });
-        await rename(temporary, target);
+        for (let attempt = 0; ; attempt++) {
+          await this.locate(projectId, file, { ...options, grantId: grant.grantId });
+          const latest = await readFile(target).catch((error) => {
+            if (error.code !== "ENOENT") throw error;
+            return null;
+          });
+          if ((latest === null ? null : digest(latest)) !== hash)
+            throw new Error(`파일이 외부에서 변경되었습니다: ${file}`);
+          try {
+            await rename(temporary, target);
+            break;
+          } catch (error) {
+            if (process.platform !== "win32" || !["EPERM", "EBUSY", "EACCES"].includes(error.code) || attempt >= 5)
+              throw error;
+            await delay(25 * (attempt + 1));
+          }
+        }
       } finally {
         await handle?.close();
         await rm(temporary, { force: true });
       }
       return { path: file, hash: digest(content), absolutePath: target };
-    });
   }
   async tree(projectId) {
     const grant = await this.grant(projectId);

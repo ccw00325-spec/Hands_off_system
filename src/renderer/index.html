@@ -148,7 +148,7 @@
           <button class="selected" id="tab-workspace" aria-selected="true">
             에이전트 작업 공간</button
           ><button id="tab-images" aria-selected="false">
-            UI 시안 <span class="tiny">GPT IMAGE 2</span>
+            UI 시안 <span class="tiny" id="image-key-model">GPT IMAGE 2</span>
           </button>
         </nav>
         <div id="workspace-view">
@@ -160,6 +160,8 @@
             <button id="open-roles">AI 역할 변경 ⇄</button>
           </section>
           <section class="terminal planner" aria-labelledby="planner-heading">
+            <div id="rollback-banner" class="rollback-banner" hidden><strong id="rollback-reason">검증 실패</strong><button id="rollback-run" type="button">이 작업의 변경 되돌리기</button></div>
+            <div id="design-approval-banner" class="rollback-banner" hidden><span id="design-approval-status"></span><button id="open-run-design" type="button">UI 시안 보기</button></div>
             <header class="panel-heading">
               <div class="agent-name">
                 <span class="agent-icon mint">G</span>
@@ -229,6 +231,9 @@
                     목록 불러오기 ▾
                   </button>
                 </div>
+                <label class="check-label" title="기본 테스트 통과 후 프로젝트의 test:mutation 스크립트를 실행합니다.">
+                  <input id="mutation-option" type="checkbox" /> 뮤테이션 테스트
+                </label>
                 <div class="run-actions controller-send-actions">
                   <button id="start-workflow" class="primary">
                     작업 시작 →</button
@@ -502,8 +507,7 @@
               <p class="eyebrow">DESIGN ARTIFACT</p>
               <h2 id="image-heading">UI 시안 만들기</h2>
               <p class="secondary">
-                등록한 개인 API 키로 이미지를 생성합니다.<br />ChatGPT 로그인
-                사용량과 별도로 처리됩니다.
+                GPT 또는 Gemini 이미지 모델을 선택하세요. 생성 비용은 각 이미지 API 계정에서 처리됩니다.
               </p>
               <form id="image-form">
                 <label for="image-prompt">만들고 싶은 화면</label
@@ -515,7 +519,7 @@
                   placeholder="예: PC에서 사용하는 타이머 앱. 검은 배경, 큰 타이머 숫자, 시작·일시정지·초기화 버튼. 집중할 수 있는 간결한 구성."
                 ></textarea>
                 <div class="image-settings">
-                  <span>GPT Image 2</span><span>1536 × 1024 · Medium</span>
+                  <span id="image-model-label">GPT Image 2</span><span>이미지 API</span>
                 </div>
                 <p id="image-key-hint" class="hint">
                   연결 설정에서 이미지 API 키를 등록하세요.
@@ -530,6 +534,9 @@
               </p>
             </div>
             <div class="image-canvas" id="image-canvas">
+              <div class="image-provider-controls"><label>모델 변경
+                <select id="image-provider"><option value="gpt">GPT Image 2</option><option value="gemini">Gemini Flash Image</option></select>
+              </label><button id="connect-image-provider" type="button">API 키 연결</button></div>
               <div id="image-empty">
                 <span class="canvas-icon">▧</span>
                 <h3>시안을 이곳에서 확인합니다.</h3>
@@ -548,8 +555,12 @@
       </main>
       <aside class="task-inspector" aria-label="실행 현황">
         <header>
-          <strong>실행 현황</strong><span id="inspector-state">대기</span>
+          <strong>실행 현황</strong><span id="inspector-state">대기</span><button id="open-checkpoints" type="button" class="text-button">체크포인트 ↗</button>
         </header>
+        <section class="verified-card">
+          <strong id="verified-checkpoint-label">검증 통과 기록 없음</strong>
+          <button id="restore-verified" type="button" hidden>이 지점으로 복원</button>
+        </section>
         <section
           id="mascot-stage"
           class="mascot-stage"
@@ -613,6 +624,11 @@
           <summary>저장된 변경</summary>
           <ul id="inspector-changes"></ul>
         </details>
+        <details id="work-usage-details">
+          <summary id="work-usage-summary">이번 작업 사용량 · 대기</summary>
+          <ul id="work-usage-panels"></ul>
+        </details>
+
         <section class="testing-inspector">
           <header>
             <strong>테스트 설계·실행</strong
@@ -623,6 +639,11 @@
             준비합니다.
           </p>
           <ol id="testing-cases"></ol>
+          <details id="mutation-details" hidden>
+            <summary id="mutation-summary"></summary>
+            <p id="mutation-command" class="hint"></p>
+            <ul id="mutation-findings"></ul>
+          </details>
           <div class="action-row">
             <button id="show-test-report" class="text-button" hidden="">
               결과·재현 절차 ↗</button
@@ -882,7 +903,7 @@
             저장소·로그에 기록하지 않습니다.
           </p>
           <form id="key-form">
-            <label for="image-api-key">OpenAI 개인 API 키</label>
+            <label id="image-key-label" for="image-api-key">OpenAI 개인 API 키</label>
             <div class="key-input-row">
               <input
                 id="image-api-key"
@@ -899,8 +920,8 @@
             않습니다.
           </p>
           <div class="action-row">
-            <button class="text-button" data-link="keys">API 키 발급 ↗</button
-            ><button class="text-button" data-link="usage">
+            <button id="image-key-link" class="text-button" data-link="keys">API 키 발급 ↗</button
+            ><button id="image-usage-link" class="text-button" data-link="usage">
               API 사용 내역 ↗</button
             ><button id="delete-key" class="text-button danger" hidden="">
               저장된 키 삭제
@@ -1073,6 +1094,8 @@
       </div>
     </dialog>
     <dialog id="roles-dialog" aria-labelledby="roles-title">
+      <button type="button" id="close-roles-outside" class="icon-button" aria-label="역할 설정 닫기">✕</button>
+      <div class="roles-dialog-panel">
       <div class="dialog-heading">
         <div>
           <p class="eyebrow">PROJECT ROLE ASSIGNMENTS</p>
@@ -1112,6 +1135,31 @@
           </button>
         </div>
       </form>
+      </div>
+    </dialog>
+
+    <dialog id="checkpoints-dialog" aria-labelledby="checkpoints-title">
+      <header class="dialog-heading">
+        <h2 id="checkpoints-title">복원 미리보기</h2>
+        <button id="close-checkpoints" class="icon-button" aria-label="닫기">×</button>
+      </header>
+      <div class="tour-content">
+        <label>되돌릴 변경 <select id="checkpoint-select"></select></label>
+        <pre id="checkpoint-preview" aria-live="polite"></pre>
+        <button id="confirm-checkpoint" type="button" class="primary" disabled>이 변경 복원</button>
+      </div>
+    </dialog>
+    <dialog id="first-run-tour" aria-labelledby="tour-title" aria-describedby="tour-detail">
+      <header class="dialog-heading">
+        <div><p class="eyebrow" id="tour-count"></p><h2 id="tour-title"></h2></div>
+      </header>
+      <div class="tour-content">
+        <p id="tour-detail"></p>
+        <div class="action-row">
+          <button type="button" id="tour-skip">건너뛰기</button>
+          <button type="button" id="tour-next" class="primary">다음 →</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog
@@ -1227,6 +1275,7 @@
     </dialog>
 
     <dialog id="guide-dialog" aria-labelledby="guide-title">
+      <button id="replay-tour" type="button" class="text-button">첫 실행 둘러보기 ↗</button>
       <header class="dialog-heading">
         <div>
           <h2 id="guide-title">Hands off 가이드</h2>
@@ -1296,6 +1345,13 @@
           <section>
             <h3>작업 자동화</h3>
             <div id="settings-work-controls" class="settings-fields">
+              <label class="check-label"><input id="design-approval" type="checkbox" /> UI 작업 전 시안 생성 및 승인 대기</label>
+              <label>작업당 AI 호출 한도<input id="max-agent-calls" type="number" min="5" max="500" required /></label>
+              <label>동시 AI 호출 수<input id="max-concurrent-agents" type="number" min="1" max="4" required /></label>
+              <label>GPT API 모델 ID<input id="api-rate-model" maxlength="150" /></label>
+              <label>입력 100만 토큰 단가 (USD)<input id="api-input-rate" type="number" min="0" max="10000" step="any" /></label>
+              <label>출력 100만 토큰 단가 (USD)<input id="api-output-rate" type="number" min="0" max="10000" step="any" /></label>
+              <label>작업당 추정 API 예산 (USD, 0은 해제)<input id="api-budget" type="number" min="0" max="10000" step="any" /></label>
               <label
                 >자동 수정 최대 횟수<input
                   id="max-repair-rounds"

@@ -33,6 +33,7 @@ function fixture() {
     },
     {
       snapshot: async () => snapshot,
+      read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); },
       grant: async () => ({ grantId: "grant" }),
     },
     () => {},

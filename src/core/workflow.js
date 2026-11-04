@@ -1,14 +1,18 @@
+import { applyBatch, markVerified } from "./checkpoints.js";
+import { providerSnapshot, redact, redactData, secretFinding } from "./secrets.js";
 import { randomUUID } from "node:crypto";
 import { digest, relativeFile } from "./workspace.js";
 import { PROVIDER_NAMES } from "./roles.js";
-import { teamFor, agentLabel } from "./team.js";
+import { teamFor, agentLabel, agentOptions } from "./team.js";
 import { compileFunPlan, skillHash } from "./fun-contract.js";
 import { readFile } from "node:fs/promises";
+import { runMutation } from "./mutation.js";
 import { testPlanMarkdown } from "./test-plan.js";
 
 const ACTIVE = new Set([
   "testing",
   "planning",
+  "awaiting_design",
   "building",
   "validating",
   "reviewing",
@@ -65,6 +69,11 @@ export function validatePlan(plan, options = {}) {
       )
     )
       throw new Error("작업의 담당자·완료 기준·의존 관계가 유효하지 않습니다.");
+    for (const key of ["writePaths", "readPaths"]) {
+      if (task[key] === undefined) continue;
+      if (!Array.isArray(task[key]) || task[key].length > 60) throw new Error("작업 파일 범위가 올바르지 않습니다.");
+      task[key] = [...new Set(task[key].map((path) => relativeFile(path).join("/")))];
+    }
     ids.add(task.id);
   }
   const remaining = new Set(ids),
@@ -116,6 +125,7 @@ export class Workflow {
     validate = async () => ({ configured: false, passed: false }),
   ) {
     this.workspace = workspace;
+    this.designGenerator = null;
     this.providers = providers;
     this.notify = notify;
     this.validate = validate;
@@ -161,9 +171,10 @@ export class Workflow {
         projectId,
         grantId: grant.grantId,
         root: grant.root,
-        request: options.request,
-        options: structuredClone(options),
+        request: redact(options.request),
+        options: { ...structuredClone(options), request: redact(options.request) },
         status: "planning",
+        batchRollback: true,
         round: 0,
         tasks: [],
         events: [],
@@ -212,8 +223,8 @@ export class Workflow {
       const event = {
         at: new Date().toISOString(),
         actor,
-        message,
-        ...details,
+        message: redact(message),
+        ...redactData(details),
       };
       run.state.eventCount = (run.state.eventCount ?? 0) + 1;
       await this.workspace.write(
@@ -246,6 +257,118 @@ export class Workflow {
     run.queue = operation.catch(() => {});
     return operation;
   }
+  async callAgent(run, actor, action, context, admitted = false) {
+    const { state } = run;
+    const usage = state.usage ??= { calls: 0, byPanel: {} };
+    const provider = teamFor(state.options).find((agent) => agent.id === actor)?.provider;
+    const api = provider === "gpt" && state.options.gptSource === "api";
+    if (api && state.options.apiBudgetUsd > 0 && !admitted) {
+      const operation = (run.apiQueue ?? Promise.resolve()).then(() => {
+        context.signal.throwIfAborted();
+        const model = agentOptions(state.options, actor).gptModel;
+        if (model !== state.options.apiRateModel || usage.costUnknown ||
+            (usage.estimatedUsd ?? 0) >= state.options.apiBudgetUsd)
+          throw new Error("GPT API 예산 한도 또는 모델 단가를 확인하세요.");
+        return this.callAgent(run, actor, action, context, true);
+      });
+      run.apiQueue = operation.catch(() => {});
+      return operation;
+    }
+    const limit = [1, 2, 3, 4].includes(state.options.maxConcurrentAgents) ? state.options.maxConcurrentAgents : Infinity;
+    while ((run.activeCalls ?? 0) >= limit) {
+      await new Promise((resolve) => (run.callWaiters ??= []).push(resolve));
+      if (context.signal.aborted) {
+        run.callWaiters?.shift()?.();
+        context.signal.throwIfAborted();
+      }
+    }
+    context.signal.throwIfAborted();
+    if (usage.calls >= (state.options.maxAgentCalls ?? Infinity)) {
+      run.callWaiters?.shift()?.();
+      throw new Error("AI 호출 한도에 도달했습니다. 설정에서 한도를 확인한 뒤 새 작업을 시작하세요.");
+    }
+    run.activeCalls = (run.activeCalls ?? 0) + 1;
+    usage.calls++;
+    const panel = usage.byPanel[actor] ??= { calls: 0, input: 0, output: 0, measured: 0 };
+    panel.calls++;
+    const started = Date.now();
+    let measured = false;
+    const onUsage = (input, output, model) => {
+      if (measured || ![input, output].every((value) => Number.isSafeInteger(value) && value >= 0)) return;
+      measured = true;
+      panel.measured++;
+      panel.input += input;
+      panel.output += output;
+      if (api && model && model === state.options.apiRateModel &&
+          (state.options.apiInputRate > 0 || state.options.apiOutputRate > 0)) {
+        const cost = (input * state.options.apiInputRate + output * state.options.apiOutputRate) / 1_000_000;
+        usage.estimatedUsd = (usage.estimatedUsd ?? 0) + cost;
+        panel.estimatedUsd = (panel.estimatedUsd ?? 0) + cost;
+      } else if (api) usage.costUnknown = true;
+    };
+    this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
+    try {
+      const { snapshot, signal, options, designImage, ...rest } = context;
+      const payload = {
+        ...redactData(rest), signal, designImage,
+        snapshot: providerSnapshot(snapshot),
+        options: { ...redactData(options), onUsage },
+      };
+      const result = await this.providers[actor][action](payload);
+      return action === "build" && result && typeof result.summary === "string"
+        ? { ...result, summary: redact(result.summary) }
+        : redactData(result);
+    } finally {
+      run.activeCalls--;
+      run.callWaiters?.shift()?.();
+      if (api && !measured) usage.costUnknown = true;
+      panel.elapsedMs = (panel.elapsedMs ?? 0) + Date.now() - started;
+      this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
+    }
+  }
+  async reviseDesign(projectId, feedback, provider, conversationId) {
+    const run = this.runs.get(projectId);
+    if (run?.state.status !== "awaiting_design" ||
+        (conversationId && conversationId !== run.state.options.conversationId))
+      throw new Error("시안 승인을 기다리는 작업이 없습니다.");
+    if (run.designBusy || !["pending", "ready", "error"].includes(run.state.design?.status))
+      throw new Error("현재 시안을 변경할 수 없습니다.");
+    if (typeof feedback !== "string" || feedback.length > 6000 || !["gpt", "gemini"].includes(provider))
+      throw new Error("시안 요청 또는 모델을 확인하세요.");
+    run.designBusy = true;
+    const { state } = run;
+    state.design = { ...state.design, status: "generating", provider };
+    try {
+      await this.record(run, "gpt", "UI 시안을 만드는 중입니다.");
+      const notes = [...state.design.feedback, redact(feedback.trim())].filter(Boolean).slice(-5);
+      const prompt = ("Create a product UI mockup based on this request and specification.\n" +
+        state.request.slice(0, 1800) + "\n" + JSON.stringify(state.design.specification).slice(0, 4800) +
+        "\nLatest visual adjustments: " + notes.join("\n").slice(-4300)).slice(0, 12000);
+      const result = await this.designGenerator(projectId, prompt, provider, run.controller.signal);
+      run.controller.signal.throwIfAborted();
+      state.design = { ...state.design, status: "ready", feedback: notes, artifactId: result.artifactId, path: result.path, hash: result.hash };
+      await this.record(run, "gpt", "UI 시안을 한번 확인해 주시겠습니까? 마음에 들면 ‘이대로 적용’이라고 입력해 주세요.");
+      return result;
+    } catch (error) {
+      if (!run.controller.signal.aborted) {
+        state.design.status = "error";
+        await this.record(run, "gpt", "시안 생성에 실패했습니다. UI 시안 탭에서 키를 연결하거나 다시 생성하세요.");
+      }
+      throw error;
+    } finally {
+      run.designBusy = false;
+    }
+  }
+  async approveDesign(projectId, conversationId) {
+    const run = this.runs.get(projectId);
+    if (run?.state.status !== "awaiting_design" ||
+        run.state.options.conversationId !== conversationId ||
+        run.state.design?.status !== "ready" || run.designBusy || !run.acceptDesign)
+      throw new Error("현재 대화에서 검토할 시안이 준비될 때까지 기다려 주세요.");
+    run.state.design.status = "approved";
+    await this.record(run, "gpt", "승인한 UI 시안과 수정 요청을 반영해 구현을 시작합니다.");
+    run.acceptDesign();
+  }
   async snapshot(run) {
     run.controller.signal.throwIfAborted();
     await this.workspace.grant(run.state.projectId, run.state.grantId);
@@ -272,7 +395,14 @@ export class Workflow {
       `${task.title || task.id}: ${issues.length ? "지적된 문제를 수정합니다." : "구현을 시작합니다."}`,
       { taskId: task.id, activity: "dispatch" },
     );
-    const report = await this.providers[task.owner].build({
+    let designImage;
+    if (task.kind === "ui" && state.design?.status === "approved" && state.design.hash) {
+      const buffer = await this.workspace.read(state.projectId, state.design.path, { grantId: state.grantId, maxBytes: 16 * 1024 * 1024 });
+      if (digest(buffer) !== state.design.hash) throw new Error("승인한 UI 시안 파일이 변경되었습니다.");
+      designImage = buffer.toString("base64");
+    }
+    const report = await this.callAgent(run, task.owner, "build", {
+      designImage,
       task:
         task.kind === "test"
           ? {
@@ -282,6 +412,7 @@ export class Workflow {
           : task,
       issues,
       spec: state.spec,
+      design: state.design?.status === "approved" ? state.design : undefined,
       snapshot,
       options: state.options,
       signal: run.controller.signal,
@@ -296,7 +427,9 @@ export class Workflow {
       throw new Error("작업 결과의 파일 목록을 확인하지 못했습니다.");
     const seen = new Set();
     for (const file of report.files) {
-      relativeFile(file.path);
+      file.path = relativeFile(file.path).join("/");
+      if (task.writePaths && !task.writePaths.includes(file.path))
+        throw new Error(`계획에 선언되지 않은 변경입니다: ${file.path}`);
       if (
         task.kind === "test" &&
         !(task.testFiles ?? state.testing.plan.files).includes(file.path)
@@ -305,40 +438,52 @@ export class Workflow {
           "테스트 담당자는 계획에 선언한 테스트 코드만 수정할 수 있습니다.",
         );
       if (
-        seen.has(file.path) ||
+        seen.has(process.platform === "win32" ? file.path.toLowerCase() : file.path) ||
         typeof file.content !== "string" ||
         Buffer.byteLength(file.content) > 500000
       )
         throw new Error("작업 결과의 파일 경로나 크기가 올바르지 않습니다.");
-      seen.add(file.path);
+      seen.add(process.platform === "win32" ? file.path.toLowerCase() : file.path);
     }
-    const changed = [];
-    for (const file of report.files) {
-      run.controller.signal.throwIfAborted();
+    const proposed = report.files.map((file) => {
+      const line = secretFinding(file.content);
+      if (line) throw new Error(`비밀값 탐지: ${file.path}:${line}`);
       const before = snapshot.files.find((entry) => entry.path === file.path);
-      if (before)
-        await this.workspace.write(
-          state.projectId,
-          `.control-tower/runs/${state.id}/backups/${randomUUID()}.json`,
-          JSON.stringify({
-            path: file.path,
-            hash: before.hash,
-            content: before.content,
-          }),
-          { internal: true, grantId: state.grantId, newOnly: true },
-        );
-      const result = await this.workspace.write(
-        state.projectId,
-        file.path,
-        file.content,
-        { baseHash: before?.hash ?? null, grantId: state.grantId },
-      );
-      changed.push({ path: result.path, hash: result.hash });
-      state.ownership ??= {};
-      state.ownership[result.path] = { owner: task.owner, taskId: task.id };
-      await this.record(run, task.owner, `${result.path} 저장`, {
-        taskId: task.id,
-        path: result.path,
+      if (before && secretFinding(before.content)) throw new Error(`비밀값이 있는 원본 파일은 수동으로 정리하세요: ${file.path}`);
+      return { ...file, baseHash: before?.hash ?? null, hash: digest(file.content) };
+    }).filter((file) => file.hash !== file.baseHash);
+    const risky = proposed.filter(({ path }) =>
+      /(?:^|[/. _-])(?:auth|oauth|permissions?|schema|migrations?|contracts?|openapi|ipc|deploy)(?:[/. _-]|$)|(?:^|\/)package\.json$/i.test(path) ||
+      (state.ownership?.[path] && state.ownership[path].taskId !== task.id),
+    );
+    if (state.options.crossReview && risky.length) {
+      const peers = teamFor(state.options).filter((agent) => agent.id !== task.owner);
+      const reviewer = peers.find((agent) => agent.roles.includes("review")) ?? peers[0];
+      if (!reviewer) throw new Error("위험 변경을 검토할 다른 작업 패널이 필요합니다.");
+      const staged = new Map(snapshot.files.map((file) => [file.path, file]));
+      for (const file of proposed) staged.set(file.path, file);
+      const review = validateReview(await this.callAgent(run, reviewer.id, "review", {
+        snapshot: { ...snapshot, hash: digest(JSON.stringify([...staged.values()].map(({ path, hash }) => [path, hash]))), files: [...staged.values()] },
+        options: state.options, signal: run.controller.signal,
+        tasks: [task], spec: state.spec,
+        validation: { summary: "파일 적용 전 교차 검토", riskyPaths: risky.map((file) => file.path) },
+      }), [task]);
+      await this.record(run, reviewer.id, review.summary, { taskId: task.id, activity: "cross-review", riskyPaths: risky.map((file) => file.path), approved: !review.issues.length });
+      if (review.issues.length)
+        throw Object.assign(new Error("교차 검토에서 적용을 보류했습니다. " + redact(review.issues.map((issue) => issue.description).join(" / "))), { code: "CROSS_REVIEW", issues: review.issues });
+    }
+    run.controller.signal.throwIfAborted();
+    const checkpoint = await applyBatch(this.workspace, state.projectId, state.grantId,
+      proposed, task.title || task.id, (task.readPaths ?? []).map((path) => ({
+        path, baseHash: snapshot.files.find((file) => file.path === path)?.hash ?? null,
+      })), state.id);
+    const changed = proposed.map(({ path, hash }) => ({ path, hash }));
+    state.ownership ??= {};
+    for (const file of changed)
+      state.ownership[file.path] = { owner: task.owner, taskId: task.id, hash: file.hash };
+    for (const file of proposed) {
+      await this.record(run, task.owner, `${file.path} 저장`, {
+        taskId: task.id, path: file.path, checkpoint,
         preview: file.content.slice(0, 8000),
         previewTruncated: file.content.length > 8000,
       });
@@ -365,11 +510,16 @@ export class Workflow {
       task.status = "pending";
     const launch = (task) => {
       owners.add(task.owner);
-      const promise = this.worker(
-        run,
-        task,
-        issues.filter((issue) => issue.taskId === task.id),
-      ).then(
+      const taskIssues = issues.filter((issue) => issue.taskId === task.id);
+      const promise = this.worker(run, task, taskIssues).catch(async (error) => {
+        const changedBy = run.state.ownership?.[error.path];
+        const internalConflict = error.code === "WORKSPACE_CONFLICT" &&
+          changedBy && changedBy.taskId !== task.id && changedBy.hash === error.actualHash;
+        const reviewRepair = error.code === "CROSS_REVIEW" && run.state.options.maxRepairRounds > 0;
+        if (!internalConflict && !reviewRepair) throw error;
+        await this.record(run, "system", `${task.title || task.id}: 최신 파일 또는 검토 의견을 반영해 한 번 다시 시도합니다.`);
+        return this.worker(run, task, reviewRepair ? [...taskIssues, ...error.issues] : taskIssues);
+      }).then(
         () => ({ id: task.id, owner: task.owner }),
         (error) => ({ id: task.id, owner: task.owner, error }),
       );
@@ -383,6 +533,9 @@ export class Workflow {
       for (const task of pending) {
         if (
           !owners.has(task.owner) &&
+          !run.state.tasks.some((other) => running.has(other.id) &&
+            ((task.writePaths ?? []).some((path) => [...(other.writePaths ?? []), ...(other.readPaths ?? [])].includes(path)) ||
+             (task.readPaths ?? []).some((path) => (other.writePaths ?? []).includes(path)))) &&
           task.dependsOn.every(
             (id) =>
               run.state.tasks.find((candidate) => candidate.id === id)
@@ -423,7 +576,7 @@ export class Workflow {
     };
     let plan;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const proposed = await this.providers.gpt.plan({
+      const proposed = await this.callAgent(run, "gpt", "plan", {
         request: state.request,
         snapshot,
         options: state.options,
@@ -483,6 +636,23 @@ export class Workflow {
       state.spec,
       { newOnly: true, grantId: state.grantId },
     );
+    if (state.options.designApproval && this.designGenerator && state.tasks.some((task) => task.kind === "ui")) {
+      state.status = "awaiting_design";
+      state.design = { status: "pending", feedback: [], specification: plan.design ?? plan.spec.slice(0, 4800) };
+      const approval = new Promise((resolve, reject) => {
+        const signal = run.controller.signal;
+        const abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        run.acceptDesign = () => {
+          signal.removeEventListener("abort", abort);
+          resolve();
+        };
+      });
+      void approval.catch(() => {});
+      void this.reviseDesign(state.projectId, "", state.options.imageProvider ?? "gpt").catch(() => {});
+      await approval;
+      run.controller.signal.throwIfAborted();
+    }
     state.status = "building";
     await this.record(
       run,
@@ -518,6 +688,25 @@ export class Workflow {
             ...event,
           }),
       });
+      if (state.options.mutation) {
+        const stableBaseline = beforeValidation.hash === (await this.snapshot(run)).hash;
+        if (state.validation.passed && stableBaseline) {
+          state.mutation = { passed: false, status: "running", summary: "핵심 로직의 변이를 실행하는 중입니다." };
+          await this.record(run, "system", state.mutation.summary);
+        }
+        state.mutation = state.validation.passed && stableBaseline
+          ? await runMutation(this.workspace, {
+              projectId: state.projectId,
+              grantId: state.grantId,
+              options: state.options,
+              signal: run.controller.signal,
+              onOutput: (event) => this.notify({ type: "agent-progress", projectId: state.projectId, conversationId: state.options.conversationId, agentId: "gpt", ...event }),
+            }, this.validate)
+          : { passed: false, status: "blocked", summary: "기본 테스트 통과 후 변이를 실행합니다. " + state.validation.summary };
+        if (state.expectedMutationScope && state.mutation.scopeHash &&
+            state.mutation.scopeHash !== state.expectedMutationScope)
+          state.mutation = { ...state.mutation, passed: false, status: "blocked", summary: "테스트 보강 전후의 변이 범위가 달라 같은 변이를 검증할 수 없습니다." };
+      }
       const frozen = await this.snapshot(run);
       state.snapshotHash = frozen.hash;
       if (beforeValidation.hash !== frozen.hash)
@@ -528,6 +717,11 @@ export class Workflow {
           summary:
             "검증 중 소스가 변경되어 검증 결과를 현재 파일에 적용할 수 없습니다.",
         };
+      if (state.mutation) {
+        if (state.validation.stale)
+          state.mutation = { ...state.mutation, passed: false, status: "blocked", summary: "검증 중 소스가 변경되었습니다." };
+        await this.record(run, "system", "뮤테이션 테스트 · " + state.mutation.summary);
+      }
       await this.testingResult(run);
       state.status = "reviewing";
       await this.record(
@@ -539,7 +733,7 @@ export class Workflow {
         snapshot: frozen,
         tasks: state.tasks,
         ownership: state.ownership,
-        validation: state.validation,
+        validation: { ...state.validation, mutation: state.mutation },
         spec: state.spec,
         signal: run.controller.signal,
         options: state.options,
@@ -548,7 +742,7 @@ export class Workflow {
         {
           actor: "gpt",
           ...validateReview(
-            await this.providers.gpt.review(context),
+            await this.callAgent(run, "gpt", "review", context),
             state.tasks,
             state.ownership,
           ),
@@ -566,7 +760,7 @@ export class Workflow {
           participants.map(async (actor) => ({
             actor,
             ...validateReview(
-              await this.providers[actor].review(context),
+              await this.callAgent(run, actor, "review", context),
               state.tasks,
               state.ownership,
             ),
@@ -581,23 +775,31 @@ export class Workflow {
           "검토 중 파일이 변경되었습니다. 현재 검토를 완료로 인정할 수 없습니다.",
         );
       state.reviews = reviews;
-      const issues = reviews.flatMap((review) => review.issues);
+      const issues = reviews.flatMap((review) => review.issues).filter((issue) =>
+        issue.mutationGap !== true || (
+          state.mutation?.status === "findings" &&
+          state.tasks.some((task) => task.id === issue.taskId && task.kind === "test")
+        ),
+      );
       for (const review of reviews)
         await this.record(run, review.actor, review.summary, {
           issues: review.issues,
           snapshotHash: frozen.hash,
         });
       if (!issues.length) {
-        state.status =
-          state.validation.configured && state.validation.passed
+        const finalStatus =
+          state.validation.configured && state.validation.passed &&
+          (!state.options.mutation || state.mutation?.passed)
             ? "completed"
             : "awaiting_validation";
+        if (finalStatus === "completed") await markVerified(this.workspace, state.projectId, state.grantId, frozen);
+        state.status = finalStatus;
         await this.record(
           run,
           "gpt",
           state.status === "completed"
             ? "검증과 최종 검토를 통과했습니다."
-            : "코드 검토는 통과했지만 실행 검증이 통과하지 않아 전체 완료로 표시하지 않습니다.",
+            : "코드 검토는 끝났습니다. 기본 테스트 또는 선택한 뮤테이션 테스트를 확인하세요.",
         );
         return;
       }
@@ -634,6 +836,9 @@ export class Workflow {
           `${state.options.team ? agentLabel(teamFor(state.options).find((agent) => agent.id === issue.owner)) : state.options.roles ? PROVIDER_NAMES[state.options.roles[issue.owner]] : issue.owner.toUpperCase()}에 수정 요청: ${issue.description}`,
           { taskId: issue.taskId },
         );
+      state.expectedMutationScope = [...selected].every(
+        (id) => state.tasks.some((task) => task.id === id && task.kind === "test"),
+      ) ? (state.expectedMutationScope ?? state.mutation?.scopeHash) : null;
       await this.buildTasks(run, [...selected], issues);
     }
   }
@@ -674,6 +879,8 @@ export class Workflow {
     this.starting.add(projectId);
     try {
       const state = await this.current(projectId, runId);
+      if (state?.options.mutation)
+        throw new Error("뮤테이션 테스트를 포함한 새 작업으로 전체 검증을 다시 실행하세요.");
       if (!state || !state.testing)
         throw new Error("이 대화에는 테스트 계획이 없습니다.");
       const before = await this.workspace.snapshot(projectId);
@@ -720,10 +927,9 @@ export class Workflow {
         const reviewed =
           state.reviews?.length &&
           state.reviews.every((review) => !review.issues.length);
-        state.status =
-          state.validation.passed && reviewed
-            ? "completed"
-            : "awaiting_validation";
+        const finalStatus = state.validation.passed && reviewed ? "completed" : "awaiting_validation";
+        if (finalStatus === "completed") await markVerified(this.workspace, projectId, state.grantId, after);
+        state.status = finalStatus;
         await this.record(run, "system", state.validation.summary);
       })().catch(async (error) => {
         state.status = run.controller.signal.aborted
@@ -739,6 +945,17 @@ export class Workflow {
     } finally {
       this.starting.delete(projectId);
     }
+  }
+  async invalidateAfterRestore(projectId) {
+    const state = await this.current(projectId);
+    if (!state) return;
+    state.status = "awaiting_validation";
+    state.snapshotHash = null;
+    state.validation = { configured: false, passed: false, stale: true, summary: "파일을 복원했습니다. 새 작업에서 다시 검증하세요." };
+    if (state.testing) state.testing.stale = true;
+    const run = { state, queue: Promise.resolve() };
+    this.runs.set(projectId, run);
+    await this.record(run, "system", state.validation.summary);
   }
   async current(projectId, runId = null) {
     const active = this.runs.get(projectId);
@@ -792,7 +1009,7 @@ export class Workflow {
   }
   stop(projectId) {
     const run = this.runs.get(projectId);
-    if (run && this.isActive(projectId)) run.controller.abort();
+    if (run && this.isActive(projectId)) run.controller?.abort();
   }
   async stopAndWait(projectId) {
     this.stop(projectId);

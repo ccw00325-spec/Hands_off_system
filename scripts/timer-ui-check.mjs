@@ -3,7 +3,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
-export async function verifyTimerUI(root) {
+export async function verifyTimerUI(root, profileRoot = root) {
   const harness = resolve("artifacts/timer-ui-harness.cjs");
   await mkdir(resolve("artifacts"), { recursive: true });
   await writeFile(
@@ -13,7 +13,7 @@ export async function verifyTimerUI(root) {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   const application = await electron.launch({
-    args: [harness, root],
+    args: [harness, profileRoot],
     cwd: resolve("."),
     env,
   });
@@ -54,12 +54,19 @@ export async function verifyTimerUI(root) {
       "idle",
     );
     await page.locator("#duration-input").fill("0");
-    await page.locator("#start-button").click();
+    if (await page.locator("#start-button").isEnabled())
+      await page.locator("#start-button").click();
     assert.notEqual(
       await page.locator("#status-display").getAttribute("data-status"),
       "running",
     );
     assert.ok((await page.locator("#error-message").innerText()).trim());
+    await page.locator("#duration-input").fill("60");
+    await page.locator("#reset-button").click();
+    await page.screenshot({ path: resolve("artifacts", "timer-live-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: resolve("artifacts", "timer-live-mobile.png"), fullPage: true });
     return "real Electron timer UI: start, pause, resume, completion, reset, invalid input passed";
   } finally {
     await application.close();

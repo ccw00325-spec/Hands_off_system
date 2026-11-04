@@ -1,13 +1,30 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { parseEnv } from "node:util";
 import { join, dirname } from "node:path";
 import { terminateTree } from "./processes.js";
-import { nativeEnvironment } from "./child-env.js";
+import { projectEnvironment } from "./child-env.js";
+import { redact } from "./secrets.js";
 import { nodeRuntime } from "./node-runtime.js";
+
+async function projectSecretValues(root) {
+  const values = new Set();
+  const entries = await readdir(root).catch(() => []);
+  for (const name of entries.filter((entry) => /^\.env(?:\.[\w.-]+)?$/i.test(entry)).slice(0, 20)) {
+    const path = join(root, name);
+    try {
+      const info = await lstat(path);
+      if (!info.isFile() || info.nlink !== 1 || info.size > 128 * 1024) continue;
+      for (const value of Object.values(parseEnv(await readFile(path, "utf8"))))
+        if (value.length >= 8) values.add(value);
+    } catch {}
+  }
+  return [...values].sort((a, b) => b.length - a.length);
+}
 
 export async function validateProject(
   workspace,
-  { projectId, grantId, options, signal, onOutput },
+  { projectId, grantId, options, signal, onOutput, environment },
 ) {
   const testPlan = options.testPlan;
   if (!options.validationScript && !testPlan)
@@ -66,13 +83,22 @@ export async function validateProject(
       passed: false,
       summary: "검증을 실행하려면 이 PC에 Node.js와 npm을 설치하세요.",
     };
-  const npm = join(
-    dirname(executable),
-    "node_modules",
-    "npm",
-    "bin",
-    "npm-cli.js",
-  );
+  let npm;
+  if (!direct) {
+    const bin = dirname(await realpath(executable));
+    const candidates = [
+      join(bin, "node_modules", "npm", "bin", "npm-cli.js"),
+      join(bin, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+      join(bin, "..", "share", "nodejs", "npm", "bin", "npm-cli.js"),
+    ];
+    for (const candidate of candidates) {
+      if (await access(candidate).then(() => true, () => false)) {
+        npm = candidate;
+        break;
+      }
+    }
+    if (!npm) return { configured: true, passed: false, summary: "신뢰할 수 있는 Node.js 설치에서 npm을 찾지 못했습니다." };
+  }
   if (testPlan)
     for (const file of testPlan.files) {
       if (!/^tests?\//.test(file))
@@ -85,6 +111,7 @@ export async function validateProject(
   const commandDisplay = direct
     ? `node ${args.join(" ")}`
     : `npm --ignore-scripts run ${options.validationScript}`;
+  const secretValues = await projectSecretValues(grant.root);
   const startedAt = new Date().toISOString();
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
@@ -92,13 +119,14 @@ export async function validateProject(
     const command = executable;
     const child = spawn(command, args, {
       cwd: grant.root,
-      env: nativeEnvironment(),
+      env: projectEnvironment(environment),
       windowsHide: true,
       shell: false,
       detached: !windows,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let output = "",
+    let rawOutput = "", outputOverflow = false,
+      output = "",
       settled = false,
       stopping = false;
     const abort = () => {
@@ -127,16 +155,14 @@ export async function validateProject(
       );
     }, 300000);
     const capture = (chunk) => {
-      const delta = chunk
-        .toString()
-        .replace(/sk-[A-Za-z0-9_-]+/g, "[보호된 키]");
-      output = (output + chunk.toString())
-        .slice(-30000)
-        .replace(/sk-[A-Za-z0-9_-]+/g, "[보호된 키]");
-      onOutput?.({
-        kind: "validation-output",
-        text: delta.slice(-5000),
-      });
+      if (outputOverflow) return;
+      rawOutput += chunk.toString();
+      if (rawOutput.length > 2_000_000) { rawOutput = ""; outputOverflow = true; }
+    };
+    const publishOutput = () => {
+      output = outputOverflow ? "출력이 검증 한도를 초과했습니다." :
+        redact(secretValues.reduce((text, value) => text.replaceAll(value, "[보호된 비밀값]"), rawOutput)).slice(-30000);
+      if (output) onOutput?.({ kind: "validation-output", text: output });
     };
     child.once("spawn", () =>
       onOutput?.({
@@ -152,6 +178,7 @@ export async function validateProject(
     );
     child.once("close", (code) => {
       if (!stopping) {
+        publishOutput();
         const observed = [
           ...output.matchAll(/^(not ok|ok)\s+\d+\s+-\s+([^\r\n]+)/gm),
         ].map((match) => ({
@@ -181,10 +208,10 @@ export async function validateProject(
         const complete = cases.every((row) => row.status === "passed");
         finish(null, {
           configured: true,
-          passed: code === 0 && complete,
+          passed: code === 0 && complete && !outputOverflow,
           exitCode: code,
           summary:
-            code === 0 && complete
+            outputOverflow ? "출력이 검증 한도를 초과했습니다." : code === 0 && complete
               ? "사용자가 지정한 검증 명령을 통과했습니다."
               : code === 0
                 ? "명령은 종료했지만 계획한 테스트 일부가 생략됐거나 실행을 확인하지 못했습니다."

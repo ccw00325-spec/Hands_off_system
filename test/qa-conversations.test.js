@@ -453,3 +453,206 @@ test("worker questions preserve panel/conversation history and never bind unrela
     "Read-only answer",
   );
 });
+
+test("Fun and mutation repair rerun only the assigned test task before completion", async (t) => {
+  const f = await fixture(t);
+  const manifest = { scripts: { "test:mutation": "node mock-mutation.cjs" } };
+  await f.workspace.write(f.id, "package.json", JSON.stringify(manifest));
+  await f.workspace.write(f.id, "mock-mutation.cjs", `
+    const fs = require("node:fs");
+    const repaired = fs.readFileSync("tests/counter.test.cjs", "utf8").includes("T1 exact");
+    const mutants = [{
+      status: repaired ? "Killed" : "Survived",
+      location: { start: { line: 1, column: 1 } },
+      mutatorName: "NumberLiteral",
+      replacement: "3"
+    }];
+    fs.writeFileSync(process.env.TOWER_MUTATION_REPORT,
+      JSON.stringify({files:{"counter.cjs":{mutants}}}));
+  `);
+  const builds = [];
+  const provider = {
+    ready: async () => true,
+    plan: async () => plan(),
+    build: async ({ task, issues }) => {
+      builds.push(task.id);
+      return {
+        summary: "Fixture",
+        files: task.kind === "test"
+          ? [{path: "tests/counter.test.cjs", content:
+            `require('node:test')('T1 ${issues.length ? "exact" : "smoke"}',()=>require('node:assert/strict').equal(require('../counter.cjs').value,2));`}]
+          : [{path: "counter.cjs", content: "exports.value=2;"}],
+      };
+    },
+    review: async ({ validation }) => ({
+      summary: "Fixture review",
+      issues: validation.mutation?.counts.Survived
+        ? [{ taskId: "qa", owner: "gpt", mutationGap: true, description: "Assert the exact value" }]
+        : [],
+    }),
+  };
+  const engine = new Workflow(
+    f.workspace,
+    roleProviders({gpt: provider}),
+    () => {},
+    (context) => validateProject(f.workspace, context),
+  );
+  await engine.start(f.id, {
+    request: "/fun Build a counter",
+    team, funContract: true, mutation: true, maxRepairRounds: 1, allowExecution: true,
+  });
+  await engine.runs.get(f.id).promise;
+  const state = await engine.current(f.id);
+  assert.equal(state.status, "completed");
+  assert.equal(state.mutation.counts.Killed, 1);
+  assert.deepEqual(builds, ["impl", "qa", "qa"]);
+});
+
+test("a conflicted batch leaves every file untouched and checkpoint restore preserves external edits", async (t) => {
+  const { applyBatch, restoreCheckpoint, listCheckpoints } = await import("../src/core/checkpoints.js");
+  const { digest } = await import("../src/core/workspace.js");
+  const f = await fixture(t);
+  const grant = (await f.workspace.grant(f.id)).grantId;
+  await f.workspace.write(f.id, "existing.js", "before");
+  const change = [
+    { path: "existing.js", baseHash: digest("before"), content: "after" },
+    { path: "new.js", baseHash: null, content: "generated" },
+  ];
+  await f.workspace.write(f.id, "new.js", "external");
+  await assert.rejects(applyBatch(f.workspace, f.id, grant, change, "fixture"), /외부/);
+  assert.equal(String(await f.workspace.read(f.id, "existing.js")), "before");
+  const id = await applyBatch(f.workspace, f.id, grant, [change[0], {
+    path: "other.js", baseHash: null, content: "generated",
+  }], "fixture");
+  assert.equal((await listCheckpoints(f.workspace, f.id, grant))[0].id, id);
+  const preview = await restoreCheckpoint(f.workspace, f.id, grant, id, null);
+  assert.deepEqual(preview.preview.map((row) => row.action), ["restore", "delete"]);
+  await f.workspace.write(f.id, "other.js", "user edit");
+  assert.equal((await restoreCheckpoint(f.workspace, f.id, grant, id, preview.token)).id, null);
+  assert.equal(String(await f.workspace.read(f.id, "existing.js")), "after");
+  await f.workspace.write(f.id, "other.js", "generated");
+  assert.ok((await restoreCheckpoint(f.workspace, f.id, grant, id, preview.token)).id);
+  assert.equal(String(await f.workspace.read(f.id, "existing.js")), "before");
+  await assert.rejects(f.workspace.read(f.id, "other.js"), { code: "ENOENT" });
+});
+
+test("cross-review blocks risky changes before writing and charges the reviewer call", async (t) => {
+  const f = await fixture(t);
+  const provider = {
+    ready: async () => true,
+    plan: async () => plan(),
+    build: async () => ({ summary: "risk", files: [{ path: "auth.js", content: "export const enabled = true;" }] }),
+    review: async (context) => {
+      assert.deepEqual(context.validation.riskyPaths, ["auth.js"]);
+      assert.ok(context.snapshot.files.some((file) => file.path === "auth.js"));
+      await assert.rejects(f.workspace.read(f.id, "auth.js"), { code: "ENOENT" });
+      context.options.onUsage(20, 5);
+      return { summary: "blocked", issues: [{ owner: "grok", taskId: "impl", description: "missing auth check" }] };
+    },
+  };
+  const engine = new Workflow(f.workspace, roleProviders({ gpt: provider }));
+  await engine.start(f.id, {
+    request: "Review auth", team, funContract: true, maxRepairRounds: 0, maxAgentCalls: 5, crossReview: true,
+  });
+  await engine.runs.get(f.id).promise;
+  const state = await engine.current(f.id);
+  assert.equal(state.status, "needs_attention");
+  assert.equal(state.usage.calls, 3);
+  assert.equal(state.usage.byPanel.gpt.input, 20);
+  await assert.rejects(f.workspace.read(f.id, "auth.js"), { code: "ENOENT" });
+});
+
+test("API budget stops the next provider request after measured spending reaches the threshold", async (t) => {
+  const f = await fixture(t);
+  let builds = 0;
+  const provider = {
+    ready: async () => true,
+    plan: async ({ options }) => {
+      options.onUsage(1000, 1000, "priced");
+      return plan();
+    },
+    build: async () => { builds++; },
+  };
+  const engine = new Workflow(f.workspace, roleProviders({gpt: provider}));
+  await engine.start(f.id, {
+    request: "Budget test", team, funContract: true, maxRepairRounds: 0,
+    gptSource: "api", gptModel: "priced", apiRateModel: "priced",
+    apiBudgetUsd: 0.01, apiInputRate: 10, apiOutputRate: 10,
+  });
+  await engine.runs.get(f.id).promise;
+  const state = await engine.current(f.id);
+  assert.equal(state.status, "needs_attention");
+  assert.equal(state.usage.estimatedUsd, 0.02);
+  assert.equal(state.usage.calls, 1);
+  assert.equal(builds, 0);
+});
+
+test("recognized secrets are masked before planning and generated secrets are refused", async (t) => {
+  const f = await fixture(t);
+  const secret = "sk-" + "fixture0123456789abcdef";
+  await f.workspace.write(f.id, "legacy.js", `const key = "${secret}";`);
+  const provider = {
+    ready: async () => true,
+    plan: async ({ snapshot }) => {
+      assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
+      return plan();
+    },
+    build: async () => ({ summary: "fixture", files: [{ path: "leak.js", content: secret }] }),
+  };
+  const engine = new Workflow(f.workspace, roleProviders({gpt: provider}));
+  await engine.start(f.id, { request: "Create a feature", team, funContract: true, maxRepairRounds: 0 });
+  await engine.runs.get(f.id).promise;
+  const state = await engine.current(f.id);
+  assert.equal(state.status, "needs_attention");
+  assert.match(state.events.at(-1).message, /비밀값 탐지/);
+  assert.doesNotMatch(JSON.stringify(state), new RegExp(secret));
+  await assert.rejects(f.workspace.read(f.id, "leak.js"), { code: "ENOENT" });
+});
+
+test("batch rolls back earlier writes if a later file write fails", async (t) => {
+  const { applyBatch } = await import("../src/core/checkpoints.js");
+  const { digest } = await import("../src/core/workspace.js");
+  const f = await fixture(t);
+  const grant = (await f.workspace.grant(f.id)).grantId;
+  await f.workspace.write(f.id, "existing.js", "before");
+  const write = f.workspace.writeUnlocked.bind(f.workspace);
+  f.workspace.writeUnlocked = (id, path, ...args) => {
+    if (path === "blocked.js") throw new Error("injected write failure");
+    return write(id, path, ...args);
+  };
+  await assert.rejects(applyBatch(f.workspace, f.id, grant, [
+    { path: "existing.js", baseHash: digest("before"), content: "after" },
+    { path: "blocked.js", baseHash: null, content: "new" },
+  ], "fixture"), /injected write failure/);
+  assert.equal(String(await f.workspace.read(f.id, "existing.js")), "before");
+  await assert.rejects(f.workspace.read(f.id, "blocked.js"), { code: "ENOENT" });
+});
+
+test("verified rollback previews and restores multiple AI batches while preserving external edits", async (t) => {
+  const { applyBatch, markVerified, restoreCheckpoint } = await import("../src/core/checkpoints.js");
+  const { digest } = await import("../src/core/workspace.js");
+  const f = await fixture(t);
+  const grant = (await f.workspace.grant(f.id)).grantId;
+  const run = "00000000-0000-0000-0000-000000000001";
+  await f.workspace.write(f.id, "logic.js", "baseline");
+  await f.workspace.write(f.id, "keep.js", "before");
+  await markVerified(f.workspace, f.id, grant, await f.workspace.snapshot(f.id));
+  await applyBatch(f.workspace, f.id, grant, [
+    { path: "logic.js", baseHash: digest("baseline"), content: "first" },
+  ], "first", [], run);
+  await applyBatch(f.workspace, f.id, grant, [
+    { path: "logic.js", baseHash: digest("first"), content: "second" },
+    { path: "draft.js", baseHash: null, content: "new" },
+  ], "second", [], run);
+  const current = await restoreCheckpoint(f.workspace, f.id, grant, "run:" + run, null);
+  assert.deepEqual(current.preview.map((row) => row.action), ["restore", "delete"]);
+  const preview = await restoreCheckpoint(f.workspace, f.id, grant, "verified", null);
+  assert.equal(preview.canRestore, true);
+  await f.workspace.write(f.id, "keep.js", "manual edit");
+  assert.equal((await restoreCheckpoint(f.workspace, f.id, grant, "verified", preview.token)).id, null);
+  assert.equal(String(await f.workspace.read(f.id, "logic.js")), "second");
+  await f.workspace.write(f.id, "keep.js", "before");
+  assert.ok((await restoreCheckpoint(f.workspace, f.id, grant, "verified", preview.token)).id);
+  assert.equal(String(await f.workspace.read(f.id, "logic.js")), "baseline");
+  await assert.rejects(f.workspace.read(f.id, "draft.js"), { code: "ENOENT" });
+});

@@ -6,6 +6,7 @@ import { homedir, tmpdir, devNull } from "node:os";
 import { randomUUID } from "node:crypto";
 import { findExecutable } from "./providers.js";
 import { nodeRuntime } from "./node-runtime.js";
+import { secretFinding } from "./secrets.js";
 import { nativeEnvironment } from "./child-env.js";
 import { digest, relativeFile } from "./workspace.js";
 
@@ -304,6 +305,14 @@ export class AuxiliaryServices {
       result.decisions ??= {};
       if (answer) result.decisions[answeredService] = answer.yes;
       await report("running", "검증된 파일을 배포용으로 준비 중…");
+      const restored = await this.workspace.read(id, ".control-tower/restored.json", {
+        internal: true, grantId: state.grantId,
+      }).then((data) => JSON.parse(data), (error) => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      });
+      if (restored && (!state.createdAt || restored.at >= state.createdAt))
+        throw new Error("체크포인트 복원 이후 새 작업에서 검증하세요.");
       const snapshot = await this.workspace.snapshot(id);
       if (
         snapshot.grantId !== state.grantId ||
@@ -348,9 +357,7 @@ export class AuxiliaryServices {
       for (const file of files) {
         if (
           digest(file.content) !== file.hash ||
-          /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp_|github_pat_|sk-[A-Za-z0-9])[A-Za-z0-9_-]{16,}/.test(
-            file.content,
-          )
+          secretFinding(file.content)
         )
           throw new Error(`배포할 수 없는 파일입니다: ${file.path}`);
         const target = join(temp, ...relativeFile(file.path));

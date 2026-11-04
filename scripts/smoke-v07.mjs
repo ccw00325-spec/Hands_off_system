@@ -1,5 +1,5 @@
 import { _electron as electron } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, realpath, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
@@ -32,6 +32,13 @@ try {
     await page.locator("#app-version").innerText(),
     "LOCAL / " + releaseVersion,
   );
+  const tour = page.locator("#first-run-tour");
+  await tour.waitFor();
+  await page.locator("#tour-next").click();
+  assert.match(await page.locator("#tour-title").innerText(), /AI 역할 변경/);
+  await page.screenshot({ path: join(artifacts, "first-run-tour.png") });
+  await page.locator("#tour-skip").click();
+  await tour.waitFor({ state: "hidden" });
   await page.locator("#settings-dialog[open]").waitFor();
   assert.equal(await page.locator("#allow-execution").isChecked(), false);
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
@@ -40,6 +47,7 @@ try {
     "First-run settings ask optional execution consent; renderer has no Node/process access",
   );
   await page.locator("#allow-execution").check();
+  assert.equal(await page.locator("#design-approval").isChecked(), true);
   await page.locator("#terminal-font-size").selectOption("14");
   await page.locator("#save-settings").click();
   await page.locator("#settings-dialog").waitFor({ state: "hidden" });
@@ -53,11 +61,29 @@ try {
       .evaluate((progress) => progress.value),
     3,
   );
+  const originalViewport = await page.evaluate(() => ({width: innerWidth, height: innerHeight}));
+  await page.setViewportSize({ width: 1100, height: 560 });
+  await page.locator("#open-roles").click();
+  const panel = page.locator(".roles-dialog-panel");
+  await panel.waitFor();
+  assert.ok(await panel.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  }), "The role form should scroll at a short viewport");
+  await page.screenshot({ path: join(artifacts, "role-dialog-close.png") });
+  await page.locator("#close-roles-outside").click();
+  await panel.waitFor({ state: "hidden" });
+  await page.setViewportSize(originalViewport);
+  checks.push("First-run tour advances and skips; the outside role close stays clickable after scrolling");
   await page.locator("#open-guide").click();
   await page.locator("#guide-dialog[open]").waitFor();
   assert.equal(await page.locator("#guide-dialog li").count(), 3);
   await page.keyboard.press("Escape");
   await page.locator("#guide-dialog").waitFor({ state: "hidden" });
+  await page.locator("#open-guide").click();
+  await page.locator("#replay-tour").click();
+  for (let step = 0; step < 4; step++) await page.locator("#tour-next").click();
+  await tour.waitFor({ state: "hidden" });
   checks.push(
     "Startup reaches the last local initialization stage; the guide opens and closes by keyboard",
   );
@@ -70,25 +96,30 @@ try {
     "Execution, repair limit and terminal preferences persist through dedicated settings",
   );
   await page.locator("#open-connections").click();
-  await page.locator("#image-api-key").fill("invalid-test-key-not-a-secret");
-  await page.locator("#save-key").click();
-  await page.locator("#image-api-key[aria-invalid=true]").waitFor();
-  assert.equal(await page.locator("#image-api-key").inputValue(), "");
-  await application.evaluate(({ shell }) => {
-    shell.openExternal = async (url) => {
-      globalThis.__authUrl = url;
-    };
-  });
-  await page.locator("#chatgpt-login").click();
-  await page.locator("#cancel-login:not([hidden])").waitFor();
-  const auth = new URL(await application.evaluate(() => globalThis.__authUrl));
-  assert.equal(auth.origin, "https://auth.openai.com");
-  assert.equal(auth.searchParams.get("code_challenge_method"), "S256");
-  await page.locator("#cancel-login").click();
+  if (await page.locator("#save-key").isEnabled()) {
+    await page.locator("#image-api-key").fill("invalid-test-key-not-a-secret");
+    await page.locator("#save-key").click();
+    await page.locator("#image-api-key[aria-invalid=true]").waitFor();
+    assert.equal(await page.locator("#image-api-key").inputValue(), "");
+    await application.evaluate(({ shell }) => {
+      shell.openExternal = async (url) => {
+        globalThis.__authUrl = url;
+      };
+    });
+    await page.locator("#chatgpt-login").click();
+    await page.locator("#cancel-login:not([hidden])").waitFor();
+    const auth = new URL(await application.evaluate(() => globalThis.__authUrl));
+    assert.equal(auth.origin, "https://auth.openai.com");
+    assert.equal(auth.searchParams.get("code_challenge_method"), "S256");
+    await page.locator("#cancel-login").click();
+    checks.push(
+      "Invalid API key is cleared; official PKCE browser request cancels without exposing credentials",
+    );
+  } else {
+    assert.equal(await page.locator("#chatgpt-login").isDisabled(), true);
+    checks.push("Unavailable OS keyring prevents API key and OAuth credential storage");
+  }
   await page.locator("#finish-connections").click();
-  checks.push(
-    "Invalid API key is cleared; official PKCE browser request cancels without exposing credentials",
-  );
   const original = (await page.evaluate(() => window.tower.projects())).value
     .items.length;
   await application.evaluate(({ dialog }) => {
@@ -231,6 +262,11 @@ try {
       const p = process.getBuiltinModule("url").fileURLToPath(url),
         require = process.getBuiltinModule("module").createRequire(p);
       const { GPTProvider } = require(p);
+      const { ImageService } = require(p.replace("providers.js", "images.js"));
+      ImageService.prototype.generate = async () => {
+        const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/iXsAAAAASUVORK5CYII=";
+        return { buffer: Buffer.from(data, "base64"), dataUrl: "data:image/png;base64," + data };
+      };
       const { CodexConnection } = require(
         p.replace("providers.js", "codex.js"),
       );
@@ -459,6 +495,23 @@ try {
     };
   });
   await page.locator("#start-workflow").click();
+  await page.locator("#design-approval-status").filter({ hasText: "이대로 적용" }).waitFor();
+  assert.equal((await page.evaluate((id) => window.tower.workflow(id), projectId)).value.tasks.every((task) => task.status === "pending"), true);
+  await page.locator("#open-run-design").click();
+  await page.locator("#generated-image").waitFor();
+  const draft = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
+  const revised = await page.evaluate(({ projectId, conversationId }) =>
+    window.tower.generateImage(projectId, "시간 숫자를 더 크게", "gemini", conversationId),
+    { projectId, conversationId: draft.options.conversationId },
+  );
+  assert.notEqual(revised.value.artifactId, draft.design.artifactId);
+  const waiting = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
+  assert.equal(waiting.design.provider, "gemini");
+  assert.ok(waiting.tasks.every((task) => task.status === "pending"));
+  await page.locator("#tab-workspace").click();
+  await page.locator("#planner-input").fill("이대로 적용");
+  await page.locator("#start-workflow").click();
+  checks.push("Automatic design generation pauses all workers until approval in the controller chat");
   await page
     .locator("#project-state")
     .filter({ hasText: "전체 완료" })
@@ -467,6 +520,15 @@ try {
     .value;
   assert.equal(run.round, 1);
   assert.equal(run.validation.passed, true);
+  await page.locator("#work-usage-summary").filter({ hasText: "호출" }).waitFor();
+  await page.locator("#open-checkpoints").click();
+  await page.locator("#checkpoints-dialog").waitFor();
+  const checkpoint = page.locator("#checkpoint-select");
+  assert.ok(await checkpoint.locator("option").count() > 1);
+  await checkpoint.selectOption({ index: 1 });
+  await page.locator("#checkpoint-preview").filter({ hasText: /복원|삭제/ }).waitFor();
+  await page.locator("#close-checkpoints").click();
+  checks.push("Work usage and persisted checkpoint previews are accessible in the desktop UI");
   assert.equal(
     run.testing.result.cases.filter((row) => row.status === "passed").length,
     2,
@@ -705,6 +767,19 @@ try {
   checks.push(
     "Full restart restores project, selected conversation, worker replies, role count and preferences without repeated consent",
   );
+  await page.locator("#restore-verified").click();
+  await page.locator("#checkpoint-preview").filter({ hasText: "되돌릴 변경이 없습니다" }).waitFor();
+  assert.equal(await page.locator("#confirm-checkpoint").isDisabled(), true);
+  await page.locator("#close-checkpoints").click();
+  await page.locator("#open-checkpoints").click();
+  await page.locator("#checkpoint-select").selectOption({ index: 1 });
+  await page.locator("#checkpoint-preview").filter({ hasText: /복원|삭제/ }).waitFor();
+  await page.locator("#confirm-checkpoint").click();
+  await page.locator("#checkpoints-dialog").waitFor({ state: "hidden" });
+  const afterRollback = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
+  assert.equal(afterRollback.status, "awaiting_validation");
+  assert.equal(afterRollback.validation.stale, true);
+  checks.push("Stable checkpoint card opens a safe preview and actual UI rollback invalidates prior verification");
   console.log(
     JSON.stringify(
       {
@@ -726,4 +801,8 @@ try {
   );
 } finally {
   await application?.close().catch(() => {});
+  if (await realpath(root) === root && root.startsWith(join(artifacts, "smoke-v07-workspace-")))
+    await rm(root, { recursive: true });
+  if (await realpath(profile).catch(() => null) === profile && profile.startsWith(join(artifacts, "smoke-v07-profile-")))
+    await rm(profile, { recursive: true });
 }

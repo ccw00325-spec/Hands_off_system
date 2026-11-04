@@ -35,6 +35,7 @@ export function mascotState(
     repairing: ["working", "삐걱이는 부품 다시 조이는 중…"],
     validating: ["checking", "방금 만든 걸 검사대에서 굴려보는 중…"],
     reviewing: ["checking", "버그 발자국 따라 손전등 옮기는 중…"],
+    awaiting_design: ["checking", "UI 시안 확인을 기다리고 있어요."],
     final_review: ["checking", "출고 전에 놓친 나사 한 번 더 찾는 중…"],
     completed: ["done", "검사 통과! 마지막 상자까지 배송 완료."],
     awaiting_validation: [

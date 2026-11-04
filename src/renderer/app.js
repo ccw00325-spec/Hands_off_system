@@ -30,6 +30,7 @@ let folderTicket = null,
   currentRun = null;
 const ACTIVE_RUN = new Set([
   "planning",
+  "awaiting_design",
   "building",
   "testing",
   "validating",
@@ -117,7 +118,7 @@ async function busy(button, text, task) {
   }
 }
 function openConnections() {
-  $("#connections").showModal();
+  if (!$("#connections").open) $("#connections").showModal();
 }
 function activeProject() {
   return projectData.items.find(
@@ -164,6 +165,7 @@ function renderProjects(data) {
     })
     .catch(() => {});
   const id = data.activeId;
+  void refreshVerifiedCheckpoint(id);
   if (!resultImage)
     void call(api.latestImage(id))
       .then((result) => {
@@ -254,15 +256,12 @@ async function refreshStatus() {
       ? "다른 계정 연결 ↗"
       : "Continue with ChatGPT ↗";
   $("#cancel-login").hidden = !status.waiting;
-  $("#delete-key").hidden = !status.image.saved;
-  $("#image-api-key").placeholder = status.image.saved
-    ? "교체하려면 새 키를 입력하세요."
-    : "sk-…";
-  $("#image-key-hint").textContent = status.image.saved
+  renderImageKey(status);
+  $("#image-key-hint").textContent = imageKeyReady(selectedImageProvider(), status)
     ? "✓ 이미지 API 키 등록됨 · 실제 생성 시 권한과 잔액 확인"
     : "연결 설정에서 이미지 API 키를 등록하세요.";
   $("#generate-image").disabled =
-    !status.image.saved || !linkedFolder || generationProject !== null;
+    !imageKeyReady(selectedImageProvider(), status) || !linkedFolder || generationProject !== null;
   $("#account-section").hidden = !status.accounts.length;
   const previousSelected = $("#account-select").value;
   $("#account-select").replaceChildren(
@@ -431,12 +430,13 @@ $("#refresh-status").addEventListener("click", () =>
 $("#key-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = $("#image-api-key");
+  const provider = imageKeyProvider;
   const key = input.value;
   input.value = "";
   input.removeAttribute("aria-invalid");
   await busy($("#save-key"), "키 확인 중…", async () => {
     try {
-      const result = await call(api.saveKey(key));
+      const result = await call(api.saveKey(key, provider));
       await refreshStatus();
       message("#key-message", result.message, "success");
       toast("이미지 API 키를 암호화해 저장했습니다.", "success");
@@ -448,7 +448,7 @@ $("#key-form").addEventListener("submit", async (event) => {
 });
 $("#delete-key").addEventListener("click", () =>
   busy($("#delete-key"), "삭제 중…", async () => {
-    await call(api.removeKey());
+    await call(api.removeKey(imageKeyProvider));
     await refreshStatus();
     message("#key-message", "저장된 API 키를 삭제했습니다.");
   }),
@@ -501,6 +501,38 @@ $("#project-form").addEventListener("submit", async (event) => {
   });
 });
 
+let imageKeyProvider = "gpt";
+const selectedImageProvider = () => $("#image-provider").value;
+const imageKeyReady = (provider = selectedImageProvider(), status = connection) =>
+  Boolean(provider === "gemini" ? status?.image?.geminiSaved : status?.image?.saved);
+function renderImageKey(status) {
+  const isGemini = imageKeyProvider === "gemini";
+  $("#image-key-model").textContent = isGemini ? "GEMINI FLASH IMAGE" : "GPT IMAGE 2";
+  $("#image-key-label").textContent = isGemini ? "Google AI Studio API 키" : "OpenAI 개인 API 키";
+  $("#image-api-key").placeholder = imageKeyReady(imageKeyProvider, status) ? "교체하려면 새 키를 입력하세요." : isGemini ? "AIza…" : "sk-…";
+  $("#image-key-link").dataset.link = isGemini ? "geminiKeys" : "keys";
+  $("#image-usage-link").hidden = isGemini;
+  $("#delete-key").hidden = !imageKeyReady(imageKeyProvider, status);
+  pill("#key-status", imageKeyReady(imageKeyProvider, status) ? "등록됨" : "미등록", imageKeyReady(imageKeyProvider, status));
+}
+function connectImageProvider() {
+  imageKeyProvider = selectedImageProvider();
+  openConnections();
+  renderImageKey(connection);
+  $("#key-form").scrollIntoView({ block: "center" });
+  $("#image-api-key").focus();
+  if (imageKeyProvider === "gemini" && connection?.gemini?.installed && !connection.gemini.connected)
+    $("#gemini-login").click();
+}
+$("#connect-image-provider").addEventListener("click", connectImageProvider);
+$("#image-provider").addEventListener("change", () => {
+  $("#image-model-label").textContent = selectedImageProvider() === "gemini" ? "Gemini Flash Image" : "GPT Image 2";
+  $("#image-key-hint").textContent = imageKeyReady() ? "이미지 API 키 등록됨" : "이미지 API 키를 연결하세요.";
+  updateReadiness();
+  if (!imageKeyReady() || (selectedImageProvider() === "gemini" && connection?.gemini?.installed && !connection.gemini.connected))
+    connectImageProvider();
+});
+$("#open-run-design").addEventListener("click", () => view(true));
 function view(images) {
   $("#workspace-view").hidden = images;
   $("#images-view").hidden = !images;
@@ -520,7 +552,7 @@ $("#image-form").addEventListener("submit", async (event) => {
   await busy($("#generate-image"), "시안 생성 중…", async () => {
     try {
       const result = await call(
-        api.generateImage(projectId, $("#image-prompt").value),
+        api.generateImage(projectId, $("#image-prompt").value, selectedImageProvider(), currentConversation?.id),
       );
       resultCache.set(projectId, result);
       if (projectData.activeId === projectId) resultImage = result;
@@ -530,7 +562,7 @@ $("#image-form").addEventListener("submit", async (event) => {
       renderImage();
     }
   });
-  $("#generate-image").disabled = !connection?.image.saved || !linkedFolder;
+  $("#generate-image").disabled = !imageKeyReady() || !linkedFolder;
   await refreshWorkspace();
 });
 $("#export-image").addEventListener("click", () =>
@@ -658,8 +690,10 @@ async function initialize() {
           !ACTIVE_RUN.has(event.state.status)
         ) {
           void refreshUsage(false);
-          if (event.projectId === projectData?.activeId)
+          if (event.projectId === projectData?.activeId) {
             void refreshWorkspace();
+            void refreshVerifiedCheckpoint(event.projectId);
+          }
         }
         return;
       }
@@ -734,7 +768,8 @@ async function initialize() {
       } finally {
         startup.close();
       }
-      if (!preferences.onboardingComplete) $("#settings-dialog").showModal();
+      if (!localStorage.getItem("tower-tour-v1")) startTour();
+      else if (!preferences.onboardingComplete) $("#settings-dialog").showModal();
       const restored = await restoreSavedConnections();
       const status = await refreshStatus();
       $("#footer-status").textContent =
@@ -747,6 +782,7 @@ async function initialize() {
       if (
         preferences.onboardingComplete &&
         !$("#settings-dialog").open &&
+        !$("#first-run-tour").open &&
         restored?.session.firstLaunch &&
         !connected
       )
@@ -804,18 +840,22 @@ function updateReadiness() {
   $("#stop-controller-chat").hidden = !pending;
   $("#start-workflow").disabled =
     needed.length > 0 || pending || !$("#planner-input").value.trim();
-  $("#start-workflow").textContent = question ? "질문 보내기 ↑" : "작업 요청 ↑";
+  $("#start-workflow").textContent = currentRun?.status === "awaiting_design" && /^이대로\s*적용[.!]?$/.test($("#planner-input").value.trim()) ? "시안 승인 ↑" : question ? "질문 보내기 ↑" : "작업 요청 ↑";
   $("#stop-workflow").hidden = !active;
   $("#choose-folder").disabled = active;
+  $("#restore-verified").disabled = active;
+  $("#open-checkpoints").disabled = active;
   $("#run-readiness").textContent = needed.length
     ? "연결 필요: " + [...new Set(needed)].join(" · ")
-    : active
+    : currentRun?.status === "awaiting_design"
+      ? "UI 시안 승인 대기 · 시안을 보고 ‘이대로 적용’이라고 입력하세요."
+      : active
       ? "작업 진행 중 · 질문은 별도 응답합니다. 변경 요청은 작업 종료 또는 중지 후 보낼 수 있습니다."
       : question
         ? "프로젝트 질문 · 파일을 수정하지 않는 대화입니다."
         : "Enter로 작업 요청 · 실행 권한과 자동 수정은 우측 상단 설정에서 관리합니다.";
   $("#generate-image").disabled =
-    !connection?.image.saved || !linkedFolder || generationProject !== null;
+    !imageKeyReady() || !linkedFolder || generationProject !== null;
 }
 async function refreshWorkspace() {
   if (!projectData) return;
@@ -901,12 +941,63 @@ const RUN_LABELS = {
   completed: "전체 완료",
   awaiting_validation: "실행 검증 필요",
   needs_input: "사용자 답변 필요",
+  awaiting_design: "UI 시안 승인 대기",
   needs_attention: "확인 필요",
   cancelled: "중지됨",
   interrupted: "이전 작업 중단됨",
 };
+let pendingDesignArtifact;
+async function loadApprovedPreview(run) {
+  if (pendingDesignArtifact === run.design.artifactId) return;
+  pendingDesignArtifact = run.design.artifactId;
+  try {
+    const result = await call(api.latestImage(run.projectId));
+    if (projectData?.activeId === run.projectId && currentRun?.design?.artifactId === result?.artifactId) {
+      resultCache.set(run.projectId, result);
+      resultImage = result;
+      renderImage();
+    }
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    pendingDesignArtifact = null;
+  }
+}
 function renderWorkflow(run) {
   currentRun = run;
+  const awaitingDesign = run?.status === "awaiting_design";
+  $("#design-approval-banner").hidden = !awaitingDesign;
+  $("#design-approval-status").textContent = ({
+    ready: "UI 시안을 한번 확인해 주시겠습니까? 마음에 들면 ‘이대로 적용’이라고 입력해 주세요.",
+    error: "시안을 만들지 못했습니다. UI 시안에서 API 키를 연결하거나 다시 생성하세요.",
+  })[run?.design?.status] ?? "UI 시안을 만드는 중입니다.";
+  if (awaitingDesign && run.design?.status === "ready" && resultImage?.artifactId !== run.design.artifactId)
+    void loadApprovedPreview(run);
+  $("#rollback-banner").hidden = !(run?.batchRollback && ["needs_attention", "awaiting_validation", "cancelled", "interrupted"].includes(run.status) &&
+    run.tasks?.some((task) => task.report?.changed?.length || task.status === "reported"));
+  $("#rollback-reason").textContent = run?.status === "awaiting_validation" ? (run.validation?.requiresConsent ? "검증 권한 필요" : "검증 실패") : RUN_LABELS[run?.status] ?? "작업 확인 필요";
+  const usage = run?.usage;
+  const cost = usage?.estimatedUsd === undefined ? "" : ` · 추정 $${usage.estimatedUsd.toFixed(4)}${usage.costUnknown ? " (일부)" : ""}`;
+  $("#work-usage-summary").textContent = usage
+    ? `이번 작업 · 호출 ${usage.calls}${run.options.maxAgentCalls ? "/" + run.options.maxAgentCalls : ""} · 수정 ${run.round}회${cost}`
+    : "이번 작업 사용량 · 대기";
+  $("#work-usage-panels").replaceChildren(...Object.entries(usage?.byPanel ?? {}).map(([id, row]) => {
+    const item = document.createElement("li");
+    const team = run.options.team?.find((agent) => agent.id === id);
+    const label = team ? `${AI_NAMES[team.provider]} · ${team.roles.map((role) => CAPABILITIES[role]).join(" / ")}` : id;
+    const tokens = row.measured ? `입력 ${row.input.toLocaleString()} · 출력 ${row.output.toLocaleString()} (${row.measured}/${row.calls}건 집계)` : "토큰 조회 미지원";
+    item.textContent = `${label} · ${row.calls}회 · ${tokens} · 누적 ${((row.elapsedMs ?? 0) / 1000).toFixed(1)}초` + (row.estimatedUsd === undefined ? "" : ` · 추정 $${row.estimatedUsd.toFixed(4)}`);
+    return item;
+  }));
+  const mutation = $("#mutation-summary");
+  $("#mutation-details").hidden = !run?.options?.mutation;
+  mutation.textContent = "뮤테이션 테스트 · " + (run?.mutation?.summary ?? "기본 테스트 후 실행 대기");
+  $("#mutation-command").textContent = [run?.mutation?.command, run?.mutation?.reportPath].filter(Boolean).join(" · ");
+  $("#mutation-findings").replaceChildren(...(run?.mutation?.findings ?? []).map((finding) => {
+    const item = document.createElement("li");
+    item.textContent = `${finding.status} · ${finding.file}:${finding.line ?? "?"} · ${finding.replacement}`;
+    return item;
+  }));
   mascot.update(run, teamConfig ?? roleAssignments ?? undefined);
   renderInspector(run);
   $("#project-state").textContent = run
@@ -992,10 +1083,13 @@ $("#start-workflow").addEventListener("click", () =>
         "gpt",
         message,
         $("#controller-mode").value,
+        $("#mutation-option").checked,
+        selectedImageProvider(),
       ),
     );
     $("#planner-input").value = "";
     if (result.state) {
+      $("#mutation-option").checked = false;
       activeRuns.set(projectId, result.state);
       if (
         projectData.activeId === projectId &&
@@ -1006,6 +1100,7 @@ $("#start-workflow").addEventListener("click", () =>
       }
     }
     await loadConversation(conversationId);
+    if (currentRun?.status === "awaiting_design" && /마음에\s*안|다시\s*만들|시안\s*수정/.test(message)) view(true);
   }),
 );
 $("#stop-workflow").addEventListener("click", () =>
@@ -1228,7 +1323,7 @@ function renderUsage(value) {
     );
   }
   $("#usage-refresh-state").textContent = value.checkedAt
-    ? `60초 갱신 · ${new Date(value.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })} 확인`
+    ? `10초 갱신 · ${new Date(value.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })} 확인`
     : "확인된 값만 표시";
   if ($("#usage-dialog").open) renderUsageDetail();
 }
@@ -1321,9 +1416,8 @@ window.addEventListener("focus", () => {
   void refreshUsage(false);
 });
 setInterval(() => {
-  if (document.visibilityState === "visible" && document.hasFocus())
-    void refreshUsage(false);
-}, 60000);
+  if (document.visibilityState === "visible") void refreshUsage(false);
+}, 10000);
 function renderAssignedRoles() {
   if (usageData) renderUsage(usageData);
   const selected = ACTIVE_RUN.has(currentRun?.status)
@@ -1411,7 +1505,8 @@ document
   .forEach((button) =>
     button.addEventListener("click", () => openRoles(button.dataset.role)),
   );
-$("#close-roles").addEventListener("click", () => $("#roles-dialog").close());
+for (const id of ["#close-roles", "#close-roles-outside"])
+  $(id).addEventListener("click", () => $("#roles-dialog").close());
 $("#roles-connections").addEventListener("click", () => {
   $("#roles-dialog").close();
   openConnections();
@@ -1757,6 +1852,7 @@ document
 $("#planner-input").addEventListener("input", updateReadiness);
 $("#controller-mode").addEventListener("change", () => {
   autoQuestion = false;
+  $("#mutation-option").disabled = $("#controller-mode").value !== "work";
   updateReadiness();
 });
 $("#open-settings").addEventListener("click", async () => {
@@ -1764,6 +1860,66 @@ $("#open-settings").addEventListener("click", async () => {
   fillPreferences(preferences);
   $("#settings-dialog").showModal();
 });
+let checkpointProject;
+let checkpointToken;
+async function previewCheckpoint() {
+  const id = $("#checkpoint-select").value;
+  checkpointToken = null;
+  $("#confirm-checkpoint").disabled = true;
+  $("#checkpoint-preview").textContent = "";
+  if (!id) return;
+  const project = checkpointProject;
+  const result = await call(api.restoreCheckpoint(project, id, null));
+  if (project !== checkpointProject || id !== $("#checkpoint-select").value) return;
+  const labels = { restore: "복원", delete: "생성 파일 삭제", conflict: "사용자 변경과 충돌", unchanged: "변경 없음" };
+  $("#checkpoint-preview").textContent = result.preview.map((row) => `${labels[row.action]} · ${row.path}`).join("\n") || "되돌릴 변경이 없습니다.";
+  checkpointToken = result.canRestore ? result.token : null;
+  $("#confirm-checkpoint").disabled = !checkpointToken;
+}
+async function refreshVerifiedCheckpoint(id) {
+  const marker = await call(api.verifiedCheckpoint(id)).catch(() => null);
+  if (projectData?.activeId !== id) return;
+  $("#verified-checkpoint-label").textContent = marker
+    ? "마지막 검증 통과 · " + new Date(marker.at).toLocaleString()
+    : "검증 통과 기록 없음";
+  $("#restore-verified").hidden = !marker;
+}
+async function openCheckpoint(selection = "") {
+  checkpointProject = projectData.activeId;
+  const rows = await call(api.checkpoints(checkpointProject));
+  const select = $("#checkpoint-select");
+  select.replaceChildren(new Option("변경 묶음을 선택하세요", ""));
+  for (const row of rows.filter((entry) => entry.status !== "reverted"))
+    select.add(new Option(`${row.label} · ${new Date(row.at).toLocaleString()}${row.status === "committed" ? "" : " · 복구 확인"}`, row.id));
+  if (selection) {
+    select.add(new Option(selection === "verified" ? "마지막 검증 통과 상태" : "이 작업의 변경 전 상태", selection));
+    select.value = selection;
+  }
+  await previewCheckpoint();
+  if (!selection && !rows.length) $("#checkpoint-preview").textContent = "저장된 변경 묶음이 없습니다.";
+  $("#checkpoints-dialog").showModal();
+}
+for (const [selector, scope] of [
+  ["#open-checkpoints", () => ""],
+  ["#restore-verified", () => "verified"],
+  ["#rollback-run", () => "run:" + currentRun.id],
+]) {
+  $(selector).addEventListener("click", () => busy($(selector), "불러오는 중…", () => openCheckpoint(scope())));
+}
+$("#checkpoint-select").addEventListener("change", () => {
+  previewCheckpoint().catch((error) => toast(error.message, "error"));
+});
+$("#close-checkpoints").addEventListener("click", () => $("#checkpoints-dialog").close());
+$("#confirm-checkpoint").addEventListener("click", () => busy($("#confirm-checkpoint"), "복원 중…", async () => {
+  const result = await call(api.restoreCheckpoint(checkpointProject, $("#checkpoint-select").value, checkpointToken));
+  if (!result.id) {
+    await previewCheckpoint();
+    throw new Error("파일 상태가 바뀌어 복원하지 않았습니다.");
+  }
+  $("#checkpoints-dialog").close();
+  await refreshWorkspace();
+  toast("선택한 변경을 복원했습니다. 새 작업에서 다시 검증하세요.");
+}));
 $("#close-settings").addEventListener("click", () =>
   $("#settings-dialog").close(),
 );
@@ -1885,6 +2041,51 @@ $("#gpt-model").addEventListener("change", () => {
 $("#startup-dialog").addEventListener("cancel", (event) =>
   event.preventDefault(),
 );
+const tourSteps = [
+  ["새 프로젝트", "상단 또는 왼쪽의 새 프로젝트에서 작업 폴더를 선택하세요. 왼쪽에서 프로젝트별 대화를 다시 열 수 있습니다."],
+  ["계정 연결과 AI 역할 변경", "계정 연결에서 기존 CLI 연결을 확인하세요. AI 역할 변경에서 컨트롤 타워와 기능 구현, UI, 테스트 담당을 정합니다."],
+  ["컨트롤 타워에서 작업 요청", "가장 위 패널에 원하는 기능을 입력하고 작업 요청을 누르세요. /fun이 요구사항과 완료 기준을 정리해 담당 AI에 전달합니다."],
+  ["테스트와 진행 상황", "각 AI 패널에서 작업 출력을 보고 오른쪽에서 진행 상태를 확인하세요. 뮤테이션 테스트는 기본 테스트가 통과한 뒤 실행됩니다. 검증과 최종 검토가 끝나면 상단에 완료가 표시됩니다."],
+];
+const tourTargets = ["#new-project", "#open-roles", "#planner-input", "#inspector-state"];
+let tourStep = 0;
+function showTourStep() {
+  document.querySelector(".tour-target")?.classList.remove("tour-target");
+  $(tourTargets[tourStep])?.classList.add("tour-target");
+  const [title, detail] = tourSteps[tourStep];
+  $("#tour-count").textContent = `HANDSOFF GUIDE · ${tourStep + 1} / ${tourSteps.length}`;
+  $("#tour-title").textContent = title;
+  $("#tour-detail").textContent = detail;
+  $("#tour-next").textContent = tourStep === tourSteps.length - 1 ? "마치기" : "다음 →";
+}
+function startTour() {
+  tourStep = 0;
+  showTourStep();
+  $("#first-run-tour").showModal();
+  $("#tour-next").focus();
+}
+function finishTour() {
+  document.querySelector(".tour-target")?.classList.remove("tour-target");
+  localStorage.setItem("tower-tour-v1", "complete");
+  $("#first-run-tour").close();
+  if (!preferences?.onboardingComplete) $("#settings-dialog").showModal();
+}
+$("#tour-next").addEventListener("click", () => {
+  if (tourStep === tourSteps.length - 1) finishTour();
+  else {
+    tourStep++;
+    showTourStep();
+  }
+});
+$("#tour-skip").addEventListener("click", finishTour);
+$("#first-run-tour").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  finishTour();
+});
+$("#replay-tour").addEventListener("click", () => {
+  $("#guide-dialog").close();
+  startTour();
+});
 $("#open-guide").addEventListener("click", () =>
   $("#guide-dialog").showModal(),
 );

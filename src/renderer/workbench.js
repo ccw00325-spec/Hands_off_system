@@ -168,6 +168,7 @@ export function renderInspector(run) {
       validating: "테스트 실행 중",
       reviewing: "코드 검토 중",
       repairing: "문제 수정 중",
+      awaiting_design: "UI 시안 승인 대기",
       final_review: "최종 검토 중",
       completed: "완료",
       awaiting_validation: "검증 대기",

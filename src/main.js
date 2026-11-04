@@ -18,6 +18,7 @@ import { ClaudeConnection } from "./core/claude.js";
 import { Projects } from "./core/projects.js";
 import { publicError } from "./core/http.js";
 import { Workspace } from "./core/workspace.js";
+import { listCheckpoints, restoreCheckpoint, verifiedCheckpoint } from "./core/checkpoints.js";
 import { Workflow } from "./core/workflow.js";
 import { GPTProvider, ClaudeProvider } from "./core/providers.js";
 import { CursorProvider } from "./core/cursor-provider.js";
@@ -70,6 +71,7 @@ let gptRestoreState = null;
 const once = new Set();
 const allowedLinks = {
   keys: "https://platform.openai.com/api-keys",
+  geminiKeys: "https://aistudio.google.com/apikey",
   usage: "https://platform.openai.com/usage",
   chatgpt: "https://chatgpt.com/#settings",
   claude: "https://code.claude.com/docs/en/setup",
@@ -112,6 +114,34 @@ async function exclusive(key, action) {
     once.delete(key);
   }
 }
+function generateDesignImage(id, prompt, provider = "gpt", signal) {
+  return exclusive("image", async () => {
+          const grant = await workspace.grant(id);
+          const result = await images.generate(prompt, provider, signal);
+          signal?.throwIfAborted();
+          const name = `${randomUUID()}.png`;
+          const saved = await workspace.write(
+            id,
+            `design/${name}`,
+            result.buffer,
+            { grantId: grant.grantId, newOnly: true },
+          );
+          const index = await store.read("image-index", {});
+          index[id] = {
+            artifactId: name,
+            path: saved.path,
+            grantId: grant.grantId,
+          };
+          await store.write("image-index", index);
+          return {
+            dataUrl: result.dataUrl,
+            artifactId: name,
+            projectId: id,
+            path: saved.path,
+            hash: saved.hash,
+          };
+        });
+}
 async function executionOptions(id) {
   const current = await status();
   const settings = await preferences.get();
@@ -121,6 +151,14 @@ async function executionOptions(id) {
     suggestRepositoryName:
       delivery?.github === true && !delivery.name && !delivery.resolvedName,
     maxRepairRounds: settings.maxRepairRounds,
+    maxAgentCalls: settings.maxAgentCalls,
+    maxConcurrentAgents: settings.maxConcurrentAgents,
+    apiBudgetUsd: settings.apiBudgetUsd,
+    apiInputRate: settings.apiInputRate,
+    apiOutputRate: settings.apiOutputRate,
+    apiRateModel: settings.apiRateModel,
+    crossReview: true,
+    designApproval: settings.designApproval,
     validationScript: settings.validationScript,
     allowExecution: settings.allowExecution,
     unattended: settings.unattended,
@@ -170,6 +208,7 @@ async function status() {
     waiting: Boolean(auth.pending),
     image: {
       saved: Boolean(vault.imageKey),
+      geminiSaved: Boolean(vault.geminiImageKey),
       verifiedAt: vault.imageKeyVerifiedAt ?? null,
     },
     claude: claudeState,
@@ -339,6 +378,7 @@ else {
             },
           }),
       );
+      workflow.designGenerator = generateDesignImage;
       agentChat = new AgentChat({
         conversations,
         workspace,
@@ -442,11 +482,11 @@ else {
         signIn(provider).code(code),
       );
       handle("tower:cancel-cli-login", (provider) => signIn(provider).cancel());
-      handle("tower:save-key", (key) =>
-        exclusive("key", () => images.saveKey(key)),
+      handle("tower:save-key", (key, provider) =>
+        exclusive("key", () => images.saveKey(key, provider)),
       );
-      handle("tower:remove-key", () =>
-        exclusive("key", () => images.removeKey()),
+      handle("tower:remove-key", (provider) =>
+        exclusive("key", () => images.removeKey(provider)),
       );
       handle("tower:projects", () => projects.list());
       handle("tower:services-status", (id) => auxiliary.status(id));
@@ -521,9 +561,9 @@ else {
       });
       handle(
         "tower:send-message",
-        (id, conversationId, agentId, message, mode) =>
+        (id, conversationId, agentId, message, mode, mutation, imageProvider) =>
           exclusive(`chat:${id}:${agentId}`, () =>
-            agentChat.send(id, conversationId, agentId, message, mode),
+            agentChat.send(id, conversationId, agentId, message, mode, mutation, imageProvider),
           ),
       );
       handle("tower:stop-message", (id, agentId) =>
@@ -605,6 +645,32 @@ else {
           )
         ).state;
       });
+      handle("tower:verified-checkpoint", async (id) => {
+        const grant = await workspace.grant(id);
+        const marker = await verifiedCheckpoint(workspace, id, grant.grantId);
+        return marker ? { at: marker.at } : null;
+      });
+      handle("tower:checkpoints", async (id) => {
+        const grant = await workspace.grant(id);
+        return listCheckpoints(workspace, id, grant.grantId);
+      });
+      handle("tower:restore-checkpoint", async (id, checkpoint, confirmation) => {
+        if (workflow.isActive(id) || auxiliary.running.has(id))
+          throw new Error("작업이나 배포가 끝난 후 복원하세요.");
+        if (confirmation != null && (typeof confirmation !== "string" || !/^[0-9a-f]{64}$/.test(confirmation)))
+          throw new Error("유효한 복원 미리보기가 필요합니다.");
+        workflow.starting.add(id);
+        auxiliary.running.add(id);
+        try {
+          const grant = await workspace.grant(id);
+          const result = await restoreCheckpoint(workspace, id, grant.grantId, checkpoint, confirmation);
+          if (result.id) await workflow.invalidateAfterRestore(id);
+          return result;
+        } finally {
+          workflow.starting.delete(id);
+          auxiliary.running.delete(id);
+        }
+      });
       handle("tower:workflow", (id) => workflow.current(id));
       handle("tower:stop-workflow", async (id) => {
         await workflow.stopAndWait(id);
@@ -630,31 +696,10 @@ else {
           .filter((model) => model.visibility === "list")
           .map((model) => ({ id: model.slug, name: model.display_name }));
       });
-      handle("tower:generate-image", (id, prompt) =>
-        exclusive("image", async () => {
-          const grant = await workspace.grant(id);
-          const result = await images.generate(prompt);
-          const name = `${randomUUID()}.png`;
-          const saved = await workspace.write(
-            id,
-            `design/${name}`,
-            result.buffer,
-            { grantId: grant.grantId, newOnly: true },
-          );
-          const index = await store.read("image-index", {});
-          index[id] = {
-            artifactId: name,
-            path: saved.path,
-            grantId: grant.grantId,
-          };
-          await store.write("image-index", index);
-          return {
-            dataUrl: result.dataUrl,
-            artifactId: name,
-            projectId: id,
-            path: saved.path,
-          };
-        }),
+      handle("tower:generate-image", (id, prompt, provider, conversationId) =>
+        workflow.runs.get(id)?.state.status === "awaiting_design"
+          ? workflow.reviseDesign(id, prompt, provider, conversationId)
+          : generateDesignImage(id, prompt, provider),
       );
       handle("tower:latest-image", async (id) => {
         const project = projects.find(await projects.list(), id);

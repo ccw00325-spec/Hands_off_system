@@ -310,10 +310,11 @@ export class UsageService {
     if (this.pending) return this.pending;
     if (
       !force &&
-      this.value.checkedAt &&
-      Date.now() - Date.parse(this.value.checkedAt) < 55000
+      this.lastStartedAt &&
+      Date.now() - this.lastStartedAt < 9500
     )
       return this.snapshot();
+    this.lastStartedAt = Date.now();
     this.pending = (async () => {
       const result = await Promise.allSettled([
         this.claudeReader(this.claude, { cwd: this.cwd }),

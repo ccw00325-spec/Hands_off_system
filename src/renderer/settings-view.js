@@ -1,9 +1,16 @@
 const $ = (selector) => document.querySelector(selector);
 export function fillPreferences(value) {
   $("#max-repair-rounds").value = value.maxRepairRounds;
+  $("#max-agent-calls").value = value.maxAgentCalls;
+  $("#max-concurrent-agents").value = value.maxConcurrentAgents;
+  $("#api-budget").value = value.apiBudgetUsd;
+  $("#api-rate-model").value = value.apiRateModel;
+  $("#api-input-rate").value = value.apiInputRate;
+  $("#api-output-rate").value = value.apiOutputRate;
   $("#validation-script").value = value.validationScript;
   $("#allow-execution").checked = value.allowExecution;
   $("#unattended-mode").checked = value.unattended;
+  $("#design-approval").checked = value.designApproval;
   $("#terminal-font-size").value = String(value.terminalFontSize);
   $("#wrap-lines").checked = value.wrapLines;
   document.documentElement.style.setProperty(
@@ -18,9 +25,16 @@ export function fillPreferences(value) {
 export function readPreferences() {
   return {
     maxRepairRounds: Number($("#max-repair-rounds").value),
+    maxAgentCalls: Number($("#max-agent-calls").value),
+    maxConcurrentAgents: Number($("#max-concurrent-agents").value),
+    apiBudgetUsd: Number($("#api-budget").value),
+    apiRateModel: $("#api-rate-model").value.trim(),
+    apiInputRate: Number($("#api-input-rate").value),
+    apiOutputRate: Number($("#api-output-rate").value),
     validationScript: $("#validation-script").value.trim(),
     allowExecution: $("#allow-execution").checked,
     unattended: $("#unattended-mode").checked,
+    designApproval: $("#design-approval").checked,
     terminalFontSize: Number($("#terminal-font-size").value),
     wrapLines: $("#wrap-lines").checked,
   };

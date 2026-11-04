@@ -87,3 +87,60 @@ test("cancelling validation terminates its npm process tree", async (t) => {
     code: "ENOENT",
   });
 });
+
+test("mutation uses a fresh report and separates uncovered mutants from passing checks", async (t) => {
+  const f = await setup(t);
+  const { runMutation } = await import("../src/core/mutation.js");
+  const file = join(f.root, "package.json");
+  const manifest = JSON.parse(await readFile(file, "utf8"));
+  manifest.scripts["test:mutation"] = "node mutation-fixture.cjs";
+  await writeFile(file, JSON.stringify(manifest));
+  const context = {
+    ...f,
+    signal: new AbortController().signal,
+    options: { allowExecution: true },
+  };
+  await writeFile(join(f.root, "mutation-fixture.cjs"), "");
+  assert.equal((await runMutation(f.workspace, context)).status, "blocked");
+  const mutant = (status) => ({
+    status, location: { start: { line: 3, column: 1 } },
+    mutatorName: "EqualityOperator", replacement: "<=",
+  });
+  async function execute(status) {
+    const report = { files: { "domain.js": { mutants: [mutant(status)] } } };
+    await writeFile(
+      join(f.root, "mutation-fixture.cjs"),
+      `require("node:fs").writeFileSync(process.env.TOWER_MUTATION_REPORT, ${JSON.stringify(JSON.stringify(report))});`,
+    );
+    return runMutation(f.workspace, context);
+  }
+  const uncovered = await execute("NoCoverage");
+  assert.equal(uncovered.passed, false);
+  assert.equal(uncovered.counts.NoCoverage, 1);
+  const killed = await execute("Killed");
+  assert.equal(killed.passed, true);
+  assert.equal(killed.scopeHash, uncovered.scopeHash);
+  assert.notEqual(killed.reportPath, uncovered.reportPath);
+});
+
+test("validation masks dotenv values and split key output before events and persistence", async (t) => {
+  const f = await setup(t);
+  const value = "fixture-value-from-dotenv";
+  const key = "sk-" + "fixture0123456789abcdef";
+  await writeFile(join(f.root, ".env"), "CUSTOM_VALUE=" + value);
+  await writeFile(join(f.root, "pass.cjs"), `
+    process.stdout.write(${JSON.stringify(key.slice(0, 16))});
+    setTimeout(() => console.log(${JSON.stringify(key.slice(16))}, ${JSON.stringify(value)}), 25);
+  `);
+  const events = [];
+  const result = await validateProject(f.workspace, {
+    ...f,
+    signal: new AbortController().signal,
+    options: { validationScript: "pass", allowExecution: true },
+    onOutput: (event) => events.push(event),
+  });
+  assert.equal(result.passed, true);
+  assert.match(result.output, /보호된 비밀값/);
+  for (const secret of [value, key, key.slice(16)])
+    assert.equal(JSON.stringify({ result, events }).includes(secret), false);
+});

@@ -80,3 +80,27 @@ test("billable requests are not retried and failed generation releases the lock"
   assert.equal(calls, 1);
   assert.equal(images.busy, false);
 });
+
+test("Gemini keeps an independent encrypted key route and generates with the image model", async () => {
+  const googleKey = "AIza" + "a".repeat(35);
+  const vault = store({ imageKey: key });
+  const calls = [];
+  const images = new ImageService(vault, async (url, options) => {
+    calls.push({ url, options });
+    return Response.json(options.method ? {
+      candidates: [{ content: { parts: [{ inlineData: {
+        mimeType: "image/png", data: Buffer.from("89504e470d0a1a0a", "hex").toString("base64"),
+      } }] } }],
+    } : { name: "models/gemini-3.1-flash-image" });
+  });
+  await images.saveKey(googleKey, "gemini");
+  assert.equal(calls[0].options.method, undefined);
+  const result = await images.generate("UI sketch", "gemini");
+  assert.match(calls[1].url, /gemini-3\.1-flash-image:generateContent$/);
+  assert.equal(calls[1].options.headers["x-goog-api-key"], googleKey);
+  assert.equal(calls[1].options.headers.Authorization, undefined);
+  assert.ok(result.dataUrl.startsWith("data:image/png;base64,"));
+  assert.equal((await vault.secrets()).imageKey, key);
+  await images.removeKey("gemini");
+  assert.equal((await vault.secrets()).geminiImageKey, undefined);
+});

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { access, mkdir, mkdtemp, rm, realpath } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, realpath, writeFile } from "node:fs/promises";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { RpcProcess } from "./rpc-process.js";
 import { findExecutable } from "./providers.js";
@@ -287,7 +287,7 @@ export class CodexConnection {
         isDefault: row.isDefault === true,
       }));
   }
-  async ask(instructions, payload, options, signal) {
+  async ask(instructions, payload, options, signal, designImage) {
     if (!(await this.status()).connected)
       throw new Error("Codex ChatGPT 로그인이 필요합니다.");
     signal.throwIfAborted();
@@ -296,10 +296,12 @@ export class CodexConnection {
     await mkdir(parent, { recursive: true });
     const root = await mkdtemp(join(parent, "request-"));
     try {
+      const imagePath = join(root, "approved-design.png");
+      if (designImage) await writeFile(imagePath, Buffer.from(designImage, "base64"), { flag: "wx" });
       return await new Promise((resolvePromise, reject) => {
         const child = this.spawn(
           executable,
-          codexExecArgs(options.gptModel || undefined),
+          designImage ? [...codexExecArgs(options.gptModel || undefined).slice(0, -1), "--image", imagePath, "-"] : codexExecArgs(options.gptModel || undefined),
           {
             cwd: root,
             env: nativeEnvironment(),
@@ -344,7 +346,10 @@ export class CodexConnection {
               event.item?.type === "agent_message"
             )
               text = event.item.text ?? "";
-            if (event.type === "turn.completed") completed = true;
+            if (event.type === "turn.completed") {
+              completed = true;
+              options.onUsage?.(event.usage?.input_tokens, event.usage?.output_tokens);
+            }
             if (["turn.failed", "error"].includes(event.type))
               failure = codexFailure(event);
           } catch {}

@@ -314,13 +314,14 @@ export class CursorConnection {
         sessionId: session.sessionId,
         modelId: model,
       });
-      const { signal: _signal, ...data } = context;
+      const { signal: _signal, designImage, ...data } = context;
       const payload = { ...data, snapshot: { ...data.snapshot, root: "." } };
       const result = await rpc.request(
         "session/prompt",
         {
           sessionId: session.sessionId,
           prompt: [
+            ...(designImage && init.agentCapabilities?.promptCapabilities?.image ? [{ type: "image", mimeType: "image/png", data: designImage }] : []),
             {
               type: "text",
               text: `${instructions}\n\n${JSON.stringify(payload)}`,

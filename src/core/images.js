@@ -1,5 +1,7 @@
 import { requestJson } from "./http.js";
 export const IMAGE_MODEL = "gpt-image-2";
+export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1/models";
 const API = "https://api.openai.com/v1";
 
 export function validateImageKey(value) {
@@ -17,19 +19,21 @@ export class ImageService {
     this.fetcher = fetcher;
     this.busy = false;
   }
-  async saveKey(input) {
-    const key = validateImageKey(input);
+  async saveKey(input, provider = "gpt") {
+    const gemini = provider === "gemini";
+    const key = gemini ? String(input ?? "").trim() : validateImageKey(input);
+    if (gemini && !/^[A-Za-z0-9_-]{20,150}$/.test(key)) throw new Error("Gemini API 키를 입력하세요.");
     if (!this.store.available())
       throw new Error("OS 보안 저장소를 사용할 수 없습니다.");
     // Checking the model endpoint does not generate a billable image.
     await requestJson(
-      `${API}/models/${IMAGE_MODEL}`,
-      { headers: { Authorization: `Bearer ${key}` } },
+      gemini ? `${GEMINI_API}/${GEMINI_IMAGE_MODEL}` : `${API}/models/${IMAGE_MODEL}`,
+      { headers: gemini ? { "x-goog-api-key": key } : { Authorization: `Bearer ${key}` } },
       this.fetcher,
     );
     await this.store.mutateSecrets((vault) => {
-      vault.imageKey = key;
-      vault.imageKeyVerifiedAt = new Date().toISOString();
+      vault[gemini ? "geminiImageKey" : "imageKey"] = key;
+      vault[gemini ? "geminiImageKeyVerifiedAt" : "imageKeyVerifiedAt"] = new Date().toISOString();
     });
     return {
       saved: true,
@@ -37,32 +41,37 @@ export class ImageService {
         "키를 암호화해 저장했습니다. 모델 조회를 확인했으며, 실제 생성 권한·잔액은 생성 시 확인됩니다.",
     };
   }
-  async removeKey() {
+  async removeKey(provider = "gpt") {
     if (this.busy) throw new Error("이미지 생성이 끝난 후 키를 삭제하세요.");
     await this.store.mutateSecrets((vault) => {
-      delete vault.imageKey;
-      delete vault.imageKeyVerifiedAt;
+      delete vault[provider === "gemini" ? "geminiImageKey" : "imageKey"];
+      delete vault[provider === "gemini" ? "geminiImageKeyVerifiedAt" : "imageKeyVerifiedAt"];
     });
   }
-  async generate(prompt) {
+  async generate(prompt, provider = "gpt", signal) {
     if (this.busy) throw new Error("이미지 생성이 이미 진행 중입니다.");
     if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 12000)
       throw new Error("시안 설명을 1~12,000자로 입력하세요.");
     this.busy = true;
     try {
       const vault = await this.store.secrets();
-      if (!vault.imageKey)
+      const gemini = provider === "gemini";
+      const key = gemini ? vault.geminiImageKey : vault.imageKey;
+      if (!key)
         throw new Error("먼저 이미지 생성용 개인 API 키를 등록하세요.");
       const result = await requestJson(
-        `${API}/images/generations`,
+        gemini ? `${GEMINI_API}/${GEMINI_IMAGE_MODEL}:generateContent` : `${API}/images/generations`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(240000),
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(240000)]) : AbortSignal.timeout(240000),
           headers: {
-            Authorization: `Bearer ${vault.imageKey}`,
+            ...(gemini ? { "x-goog-api-key": key } : { Authorization: `Bearer ${key}` }),
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
+          body: JSON.stringify(gemini ? {
+            contents: [{ parts: [{ text: prompt.trim() }] }],
+            generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+          } : {
             model: IMAGE_MODEL,
             prompt: prompt.trim(),
             n: 1,
@@ -73,7 +82,8 @@ export class ImageService {
         },
         this.fetcher,
       );
-      const data = result.data?.[0]?.b64_json;
+      const part = result.candidates?.[0]?.content?.parts?.find((item) => item.inlineData?.mimeType === "image/png");
+      const data = gemini ? part?.inlineData?.data : result.data?.[0]?.b64_json;
       if (
         typeof data !== "string" ||
         data.length > 40000000 ||

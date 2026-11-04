@@ -372,7 +372,7 @@ export class GeminiConnection {
     context.signal.addEventListener("abort", abort, { once: true });
     try {
       context.signal.throwIfAborted();
-      await this.initialize(rpc);
+      const init = await this.initialize(rpc);
       context.signal.throwIfAborted();
       const session = await rpc.request(
         "session/new",
@@ -394,13 +394,14 @@ export class GeminiConnection {
         sessionId: session.sessionId,
         modelId: model,
       });
-      const { signal, ...source } = context;
+      const { signal, designImage, ...source } = context;
       const data = { ...source, snapshot: { ...source.snapshot, root: "." } };
       const result = await rpc.request(
         "session/prompt",
         {
           sessionId: session.sessionId,
           prompt: [
+            ...(designImage && init.agentCapabilities?.promptCapabilities?.image ? [{ type: "image", mimeType: "image/png", data: designImage }] : []),
             { type: "text", text: `${instructions}\n${JSON.stringify(data)}` },
           ],
         },
