@@ -1,8 +1,9 @@
+import { pushVerifiedCommit } from "./release-commit.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, delimiter, isAbsolute, join } from "node:path";
-import { homedir, tmpdir, devNull } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { findExecutable } from "./providers.js";
 import { nodeRuntime } from "./node-runtime.js";
@@ -12,6 +13,25 @@ import { digest, relativeFile } from "./workspace.js";
 
 const execute = promisify(execFile);
 const services = ["github", "vercel", "supabase"];
+const deploymentHost = /^(?:https:\/\/)?([a-z0-9-]+\.vercel\.app)\/?$/i;
+export function priorVercelDeployment(output, runId) {
+  let listing;
+  try { listing = JSON.parse(output); }
+  catch { throw new Error("이전 Vercel 요청의 JSON 상태를 확인할 수 없습니다."); }
+  if (!Array.isArray(listing?.deployments) ||
+      listing.deployments.some((row) => row?.meta?.handsOffRun !== runId))
+    throw new Error("이전 Vercel 요청의 상태를 확인할 수 없습니다.");
+  const ready = listing.deployments.find((row) => row.state === "READY");
+  if (ready) {
+    const host = deploymentHost.exec(ready.url)?.[1];
+    if (host) return "https://" + host;
+    throw new Error("이전 Vercel 배포 주소를 확인할 수 없습니다.");
+  }
+  if (listing.pagination?.next ||
+      listing.deployments.some((row) => !["ERROR", "CANCELED"].includes(row.state)))
+    throw new Error("이전 Vercel 배포가 아직 처리 중이거나 상태가 확정되지 않았습니다. 대시보드에서 확인하세요.");
+  return null;
+}
 const slug = /^[a-z0-9][a-z0-9-]{0,62}$/i;
 
 export function repositoryName(title, id) {
@@ -265,8 +285,9 @@ export class AuxiliaryServices {
     this.running.add(id);
     let temp;
     let result;
+    let stage = "snapshot";
     const report = async (status, message) => {
-      Object.assign(result, { status, message });
+      Object.assign(result, { status, message, failedService: status === "failed" ? stage : null });
       await this.store.write(`delivery-${id}`, result);
       if (status === "awaiting_approval") return;
       this.notify({
@@ -380,12 +401,14 @@ export class AuxiliaryServices {
           )
         )
           return true;
+        stage = "github";
         await report("running", "GitHub에 커밋·푸시 중…");
         result.github = await this.pushGitHub(
           id,
           config,
           temp,
           state.repositoryName || project.title,
+          state,
         );
         await report("running", "GitHub 푸시 완료");
       }
@@ -403,6 +426,7 @@ export class AuxiliaryServices {
           )
         )
           return true;
+        stage = "vercel";
         await report("running", "Vercel 배포 중…");
         const cli = await commandFor("vercel");
         if (
@@ -425,10 +449,24 @@ export class AuxiliaryServices {
             ],
             options,
           );
-          const output = await run(
+          const metadata = "handsOffRun=" + state.id;
+          let knownUrl;
+          if (result.vercelAttempted) {
+            const listing = await run(cli, [
+              "list", config.target, "--scope", config.scope, "--meta", metadata, "--format", "json",
+            ], options).catch(() => {
+              throw new Error("이전 Vercel 배포 조회에 실패했습니다. CLI 버전과 로그인 상태를 확인하세요.");
+            });
+            knownUrl = priorVercelDeployment(listing, state.id);
+          }
+          result.vercelAttempted = true;
+          await report("running", "Vercel 원격 상태 확인 · 배포 처리 중…");
+          const output = knownUrl ?? await run(
             cli,
             [
               "deploy",
+              "--meta",
+              metadata,
               "--yes",
               "--scope",
               config.scope,
@@ -441,8 +479,10 @@ export class AuxiliaryServices {
             .find((part) =>
               /^https:\/\/[a-z0-9-]+\.vercel\.app\/?$/i.test(part),
             );
-          result.vercel = { url: url ?? null, production: config.production };
-        } catch {
+          if (!url) throw new Error("이전 Vercel 요청의 성공 여부를 확인할 수 없습니다. Vercel 대시보드에서 실행 기록을 확인하세요.");
+          result.vercel = { url, production: config.production };
+        } catch (error) {
+          if (error.message.startsWith("이전 Vercel")) throw error;
           throw new Error(
             "Vercel 배포에 실패했습니다. 프로젝트 범위와 Vercel 빌드 로그를 확인하세요.",
           );
@@ -479,7 +519,7 @@ export class AuxiliaryServices {
     }
   }
 
-  async pushGitHub(id, config, cwd, suggestedName) {
+  async pushGitHub(id, config, cwd, suggestedName, state) {
     const gh = await commandFor("github");
     const git = await findExecutable("git");
     if (
@@ -533,7 +573,7 @@ export class AuxiliaryServices {
         if (/^GIT_/i.test(key)) delete env[key];
       Object.assign(env, {
         GIT_CONFIG_NOSYSTEM: "1",
-        GIT_CONFIG_GLOBAL: devNull,
+        GIT_CONFIG_GLOBAL: join(cwd, ".git", "hands-off-empty-config"),
         GIT_TERMINAL_PROMPT: "0",
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
@@ -550,26 +590,17 @@ export class AuxiliaryServices {
         parent = await gitRun("rev-parse", "HEAD");
       }
       await gitRun("add", "--all", "--", ".");
-      // Compare the staged tree to the parent so retries do not create duplicate commits.
-      if (await gitRun("status", "--porcelain")) {
-        if (parent !== config.lastCommit)
-          throw new Error("Unexpected remote revision");
-        await gitRun(
-          "-c",
-          `user.name=${config.accounts.github}`,
-          "-c",
-          `user.email=${config.accounts.github}@users.noreply.github.com`,
-          "commit",
-          "-m",
-          "Publish verified Hands off project",
-        );
-      }
-      await gitRun("push", url, "HEAD:refs/heads/main");
-      const commit = await gitRun("rev-parse", "HEAD");
+      const { commit, key, bundle } = await pushVerifiedCommit({
+        gitRun, url, cwd, store: this.store, parent,
+        identity: [id, state.id, state.snapshotHash, config.revision, config.repoId],
+        expectedParent: config.lastCommit, account: config.accounts.github,
+      });
       await this.projects.mutate((data) => {
         const stored = this.projects.find(data, id).delivery;
         if (stored?.revision === config.revision) stored.lastCommit = commit;
       });
+      await this.store.remove(key).catch(() => {});
+      await rm(bundle, { force: true }).catch(() => {});
       return {
         url: `https://github.com/${repo}`,
         commit,

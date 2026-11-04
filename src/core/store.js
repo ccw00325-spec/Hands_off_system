@@ -41,6 +41,9 @@ export class Store {
       JSON.stringify(value, null, 2),
     );
   }
+  async remove(name) {
+    await rm(join(this.directory, `${name}.json`), { force: true });
+  }
   available() {
     return (
       this.encryption.isEncryptionAvailable() &&

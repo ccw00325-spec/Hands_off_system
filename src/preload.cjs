@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld(
     preferences: call("preferences"),
     savePreferences: call("save-preferences"),
     conversationIndex: call("conversation-index"),
+    conversationHistory: call("conversation-history"),
+    exportConversation: call("export-conversation"),
     createConversation: call("create-conversation"),
     conversation: call("conversation"),
     sendMessage: call("send-message"),

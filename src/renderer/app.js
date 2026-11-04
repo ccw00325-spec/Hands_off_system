@@ -670,6 +670,10 @@ async function initialize() {
         return;
       }
       if (event.type === "workflow") {
+        const prior = activeRuns.get(event.projectId);
+        if (event.projectId === projectData?.activeId && event.state.testFailure?.status === "intervention" &&
+            (prior?.id !== event.state.id || prior.testFailure?.status !== "intervention"))
+          toast(event.state.testFailure.reason, "error");
         activeRuns.set(event.projectId, event.state);
         if (
           event.projectId === projectData?.activeId &&
@@ -965,6 +969,19 @@ async function loadApprovedPreview(run) {
 }
 function renderWorkflow(run) {
   currentRun = run;
+  const failure = run?.testFailure;
+  $("#test-recovery").hidden = !failure;
+  $("#test-recovery-title").textContent = failure
+    ? (failure.status === "intervention" ? "사용자 확인 필요" : "테스트 실패 · 자동 수정") +
+      ` · 수정 ${run.round}/${run.options.maxRepairRounds}회`
+    : "";
+  $("#test-recovery-reason").textContent = failure
+    ? [failure.reason, failure.owners?.length ? "담당 " + failure.owners.map((id) => {
+      const panel = run.options.team?.find((row) => row.id === id);
+      return panel ? AI_NAMES[panel.provider] + " " + panel.roles.map((role) => CAPABILITIES[role]).join("/") : id;
+    }).join(", ") : ""].filter(Boolean).join(" · ")
+    : "";
+  $("#test-recovery-details").textContent = failure ? [...failure.names, ...failure.stack].join("\n") : "";
   const awaitingDesign = run?.status === "awaiting_design";
   $("#design-approval-banner").hidden = !awaitingDesign;
   $("#design-approval-status").textContent = ({
@@ -1698,6 +1715,56 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+let historyProject;
+function renderHistory(preferred) {
+  const select = $("#history-select");
+  select.replaceChildren(new Option("대화를 선택하세요", ""));
+  for (const row of (conversationIndex?.items ?? []).filter((row) => row.projectId === historyProject))
+    select.add(new Option(row.title + (row.archived ? " · 보관됨" : ""), row.id));
+  select.value = preferred ?? "";
+  updateHistoryActions();
+}
+function updateHistoryActions() {
+  const id = $("#history-select").value;
+  const row = conversationIndex?.items.find((item) => item.id === id);
+  $("#history-confirm-text").hidden = true;
+  $("#history-delete").textContent = "삭제…";
+  $("#history-archive").textContent = row?.archived ? "다시 열기" : "보관";
+  for (const selector of ["#history-delete", "#history-export", "#history-archive"])
+    $(selector).disabled = !row;
+}
+$("#open-history").addEventListener("click", () => busy($("#open-history"), "불러오는 중…", async () => {
+  historyProject = projectData.activeId;
+  await refreshConversationIndex();
+  renderHistory(currentConversation?.id);
+  $("#history-dialog").showModal();
+}));
+$("#close-history").addEventListener("click", () => $("#history-dialog").close());
+$("#history-select").addEventListener("change", updateHistoryActions);
+async function changeHistory(action) {
+  const id = $("#history-select").value;
+  const project = historyProject;
+  conversationIndex = await call(api.conversationHistory(project, id, action));
+  renderConversationTree();
+  if (projectData.activeId === project && id === currentConversation?.id && action !== "restore")
+    await loadConversation();
+  renderHistory(action === "restore" ? id : "");
+}
+$("#history-archive").addEventListener("click", () => busy($("#history-archive"), "저장 중…", () => {
+  const row = conversationIndex.items.find((item) => item.id === $("#history-select").value);
+  return changeHistory(row?.archived ? "restore" : "archive");
+}).finally(updateHistoryActions));
+$("#history-delete").addEventListener("click", () => {
+  if ($("#history-confirm-text").hidden) {
+    $("#history-confirm-text").hidden = false;
+    $("#history-delete").textContent = "영구 삭제";
+    return;
+  }
+  void busy($("#history-delete"), "삭제 중…", () => changeHistory("delete")).finally(updateHistoryActions);
+});
+$("#history-export").addEventListener("click", () => busy($("#history-export"), "내보내는 중…", async () => {
+  if (await call(api.exportConversation(historyProject, $("#history-select").value))) toast("Markdown 기록을 저장했습니다.");
+}));
 function renderConversationTree() {
   if (!projectData) return;
   conversationTree(projectData, conversationIndex, currentConversation?.id, {
@@ -2092,12 +2159,13 @@ $("#open-guide").addEventListener("click", () =>
 $("#close-guide").addEventListener("click", () => $("#guide-dialog").close());
 function renderDelivery(result) {
   $("#services-result").textContent = result
-    ? [result.message, result.github?.url, result.vercel?.url]
+    ? ["로컬 작업 완료", ({ github: "GitHub 실패", vercel: "Vercel 실패", snapshot: "릴리스 준비 실패" })[result.failedService], result.message, result.github?.url, result.vercel?.url]
         .filter(Boolean)
         .join(" · ")
     : "";
   $("#retry-delivery").hidden =
     !result || !["failed", "running"].includes(result.status);
+  $("#retry-delivery").textContent = result?.failedService === "github" ? "GitHub 푸시 다시 시도" : result?.failedService === "vercel" ? "Vercel 상태 확인·재시도" : "릴리스 다시 시도";
   if (result?.pending) showReleaseApproval(result.pending);
 }
 
@@ -2155,6 +2223,10 @@ async function loadServices() {
   $("#service-target").value = config?.target || name;
   $("#service-production").checked = config?.production ?? false;
   $("#service-supabase-ref").value = config?.supabaseRef ?? "";
+  $("#supabase-connection-hint").textContent = accounts.supabase.account
+    ? "Supabase 연결 확인됨 · 프로젝트 참조 ID는 별도로 관리합니다."
+    : accounts.supabase.installed ? "Supabase 프로젝트 목록을 확인하지 못했습니다. 로그인·프로젝트 접근 권한·네트워크를 확인한 뒤 연결 상태를 다시 확인하세요."
+      : "Supabase 연결을 확인하려면 공식 CLI를 설치하세요.";
   renderApprovalPolicy(config);
   renderDelivery(result);
 }

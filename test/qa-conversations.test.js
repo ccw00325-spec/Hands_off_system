@@ -656,3 +656,49 @@ test("verified rollback previews and restores multiple AI batches while preservi
   assert.equal(String(await f.workspace.read(f.id, "logic.js")), "baseline");
   await assert.rejects(f.workspace.read(f.id, "draft.js"), { code: "ENOENT" });
 });
+
+test("failed assertions reach the implementation worker without rewriting the original test", async (t) => {
+  const f = await fixture(t);
+  const actions = [];
+  const source = "const {test}=require('node:test'); const assert=require('node:assert/strict'); test('T1 exact',()=>assert.equal(require('../counter.cjs').value,2));";
+  const provider = {
+    ready: async () => true, plan: async () => plan(),
+    build: async ({ task, issues }) => {
+      actions.push(task.id);
+      if (task.kind === "test") return { summary: "test", files: [{ path: "tests/counter.test.cjs", content: source }] };
+      if (issues.length) assert.match(issues[0].description, /T1/);
+      return { summary: "feature", files: [{ path: "counter.cjs", content: issues.length ? "exports.value=2;" : "exports.value=1;" }] };
+    },
+    review: async () => ({ summary: "fixture", issues: [] }),
+  };
+  const engine = new Workflow(f.workspace, roleProviders({gpt: provider}), () => {},
+    (context) => validateProject(f.workspace, context));
+  await engine.start(f.id, { request: "Counter", team, funContract: true, maxRepairRounds: 2, allowExecution: true });
+  await engine.runs.get(f.id).promise;
+  const state = await engine.current(f.id);
+  assert.equal(state.status, "completed");
+  assert.equal(state.round, 1);
+  assert.deepEqual(actions, ["impl", "qa", "impl"]);
+  assert.equal(String(await f.workspace.read(f.id, "tests/counter.test.cjs")), source);
+});
+
+test("history can be archived, restored, exported with redaction and deleted within its project", async (t) => {
+  const f = await fixture(t);
+  const chats = new Conversations(f.store, f.projects);
+  const chat = await chats.create(f.id, "History");
+  const secret = "sk-" + "fixture0123456789abcdef";
+  await chats.append(f.id, chat.id, "gpt", "user", "Value " + secret);
+  const other = (await f.projects.create("Other")).activeId;
+  await assert.rejects(chats.updateHistory(other, chat.id, "delete"));
+  await chats.updateHistory(f.id, chat.id, "archive");
+  assert.equal(await chats.active(f.id), null);
+  await assert.rejects(chats.select(f.id, chat.id), /보관/);
+  const markdown = await chats.markdown(f.id, chat.id, null);
+  assert.match(markdown, /보호된 비밀값/);
+  assert.ok(!markdown.includes(secret));
+  await chats.updateHistory(f.id, chat.id, "restore");
+  assert.equal((await chats.select(f.id, chat.id)).id, chat.id);
+  await chats.updateHistory(f.id, chat.id, "delete");
+  assert.equal(await f.store.read("conversation-" + chat.id, null), null);
+  assert.equal(await chats.active(f.id), null);
+});

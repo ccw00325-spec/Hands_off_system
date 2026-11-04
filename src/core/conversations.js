@@ -1,3 +1,4 @@
+import { redact } from "./secrets.js";
 import { randomUUID } from "node:crypto";
 import { SLOT_IDS, PROVIDERS } from "./team.js";
 const validId = (id) => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id);
@@ -60,10 +61,47 @@ export class Conversations {
       return { ...row, messages: [] };
     });
   }
+  async updateHistory(projectId, id, action) {
+    if (!["archive", "restore", "delete"].includes(action)) throw new Error("기록 작업을 확인하세요.");
+    return this.mutate(async () => {
+      const data = await this.read(projectId, id);
+      const index = await this.index();
+      const previous = structuredClone(index);
+      const row = index.items.find((item) => item.id === id);
+      index.managed ??= {};
+      index.managed[projectId] = true;
+      if (action === "delete") index.items = index.items.filter((item) => item.id !== id);
+      else if (action === "archive") row.archived = true;
+      else delete row.archived;
+      if (action !== "restore" && index.active[projectId] === id)
+        index.active[projectId] = index.items.find((item) => item.projectId === projectId && !item.archived)?.id ?? null;
+      await this.store.write("conversation-index", index);
+      if (action === "delete") {
+        try { await this.store.remove(`conversation-${data.id}`); }
+        catch (error) {
+          await this.store.write("conversation-index", previous);
+          throw error;
+        }
+      }
+      return index;
+    });
+  }
+  async markdown(projectId, id, run) {
+    const chat = await this.read(projectId, id);
+    const lines = ["# " + chat.title, "", "## 대화"];
+    for (const item of chat.messages)
+      lines.push("", `### ${item.at} · ${item.agentId} · ${item.role}`, "", item.content);
+    if (run && run.id === chat.runId) {
+      lines.push("", "## 실행 요약", "", `상태: ${run.status}`, `수정 횟수: ${run.round}`);
+      for (const event of (run.events ?? []).slice(-150)) lines.push(`- ${event.at} · ${event.actor} · ${event.message}`);
+    }
+    return redact(lines.join("\n")) + "\n";
+  }
   async select(projectId, id) {
     return this.mutate(async () => {
       const data = await this.read(projectId, id);
       const index = await this.index();
+      if (index.items.find((row) => row.id === id)?.archived) throw new Error("보관된 대화를 먼저 다시 열어 주세요.");
       index.active[projectId] = id;
       await this.store.write("conversation-index", index);
       return data;

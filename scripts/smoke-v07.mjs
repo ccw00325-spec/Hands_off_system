@@ -540,7 +540,7 @@ try {
   assert.match(await page.locator("#gpt-progress").innerText(), /TAP version/);
   assert.match(await page.locator("#testing-cases").innerText(), /✓ T1/);
   checks.push(
-    "QA writes real Node tests, streams TAP, detects a fixture defect, repairs the original owner and reruns dependent UI/tests",
+    "QA writes real Node tests, streams TAP, detects a fixture defect, repairs the original owner and reruns the original tests",
   );
   assert.ok(
     (await page.evaluate(() => window.__deliveries)).some(
@@ -780,6 +780,21 @@ try {
   assert.equal(afterRollback.status, "awaiting_validation");
   assert.equal(afterRollback.validation.stale, true);
   checks.push("Stable checkpoint card opens a safe preview and actual UI rollback invalidates prior verification");
+  const disposable = await page.evaluate((id) => window.tower.createConversation(id), projectId);
+  await page.locator("#open-history").click();
+  await page.locator("#history-select").selectOption(disposable.value.id);
+  await page.locator("#history-archive").click();
+  await page.locator(`#history-select option[value="${disposable.value.id}"]`).filter({ hasText: "보관됨" }).waitFor({ state: "attached" });
+  await page.locator("#history-select").selectOption(disposable.value.id);
+  await page.locator("#history-archive").click();
+  await page.locator("#history-archive").filter({ hasText: "보관" }).waitFor();
+  await page.locator("#history-select").selectOption(disposable.value.id);
+  await page.locator("#history-delete").click();
+  await page.locator("#history-confirm-text").waitFor();
+  await page.locator("#history-delete").click();
+  await page.locator(`#history-select option[value="${disposable.value.id}"]`).waitFor({ state: "detached" });
+  await page.locator("#close-history").click();
+  checks.push("History dialog archives, restores and confirms permanent conversation deletion");
   console.log(
     JSON.stringify(
       {

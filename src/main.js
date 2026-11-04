@@ -506,7 +506,10 @@ else {
         exclusive(`delivery:${id}`, () => auxiliary.save(id, input)),
       );
       handle("tower:services-retry", async (id) => {
-        const state = await workflow.current(id);
+        const prior = await auxiliary.result(id);
+        if (!prior?.runId || !["failed", "running"].includes(prior.status))
+          throw new Error("다시 시도할 릴리스가 없습니다.");
+        const state = await workflow.current(id, prior.runId);
         if (state?.status !== "completed" || !state.options.deliveryRevision)
           throw new Error("자동 릴리스가 설정된 완료 작업이 필요합니다.");
         const config = projects.find(await projects.list(), id).delivery;
@@ -514,7 +517,8 @@ else {
           throw new Error(
             "설정이 변경됐습니다. 새 작업을 완료한 뒤 배포하세요.",
           );
-        await auxiliary.publish(state, true);
+        if (!(await auxiliary.publish(state, true)) && auxiliary.running.has(id))
+          throw new Error("릴리스가 이미 진행 중입니다.");
         return true;
       });
       handle("tower:preferences", () => preferences.get());
@@ -529,13 +533,32 @@ else {
         }),
       );
       handle("tower:conversation-index", () => conversations.list());
+      handle("tower:conversation-history", (id, conversationId, action) =>
+        exclusive(`history:${id}`, async () => {
+          if (workflow.isActive(id) || [...agentChat.sending, ...agentChat.pending.keys()].some((key) => key.startsWith(id + ":")))
+            throw new Error("프로젝트 작업이나 AI 응답이 끝난 뒤 정리하세요.");
+          return conversations.updateHistory(id, conversationId, action);
+        }),
+      );
+      handle("tower:export-conversation", async (id, conversationId) => {
+        const chat = await conversations.read(id, conversationId);
+        const run = chat.runId ? await workflow.current(id, chat.runId) : null;
+        const markdown = await conversations.markdown(id, conversationId, run);
+        const { canceled, filePath } = await dialog.showSaveDialog(window, {
+          defaultPath: "hands-off-" + chat.id.slice(0, 8) + ".md",
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (canceled || !filePath) return false;
+        await writeFile(filePath, markdown, { encoding: "utf8", mode: 0o600 });
+        return true;
+      });
       handle("tower:create-conversation", (id) => conversations.create(id));
       handle("tower:conversation", async (id, conversationId) => {
         let conversation = conversationId
           ? await conversations.select(id, conversationId)
           : await conversations.active(id);
         if (!conversation) {
-          const legacy = await workflow.current(id);
+          const legacy = (await conversations.index()).managed?.[id] ? null : await workflow.current(id);
           conversation = await conversations.create(
             id,
             legacy?.request?.slice(0, 60) ?? "새 대화",
@@ -562,9 +585,10 @@ else {
       handle(
         "tower:send-message",
         (id, conversationId, agentId, message, mode, mutation, imageProvider) =>
-          exclusive(`chat:${id}:${agentId}`, () =>
-            agentChat.send(id, conversationId, agentId, message, mode, mutation, imageProvider),
-          ),
+          exclusive(`chat:${id}:${agentId}`, () => {
+            if (once.has(`history:${id}`)) throw new Error("대화 기록을 정리하는 중입니다.");
+            return agentChat.send(id, conversationId, agentId, message, mode, mutation, imageProvider);
+          }),
       );
       handle("tower:stop-message", (id, agentId) =>
         agentChat.cancel(id, agentId),
@@ -633,6 +657,7 @@ else {
         if (error) throw new Error("폴더를 열지 못했습니다.");
       });
       handle("tower:start-workflow", async (id, options) => {
+        if (once.has(`history:${id}`)) throw new Error("대화 기록을 정리하는 중입니다.");
         const conversation =
           (await conversations.active(id)) ?? (await conversations.create(id));
         return (

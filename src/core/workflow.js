@@ -1,3 +1,4 @@
+import { testFailure } from "./test-failure.js";
 import { applyBatch, markVerified } from "./checkpoints.js";
 import { providerSnapshot, redact, redactData, secretFinding } from "./secrets.js";
 import { randomUUID } from "node:crypto";
@@ -430,6 +431,9 @@ export class Workflow {
       file.path = relativeFile(file.path).join("/");
       if (task.writePaths && !task.writePaths.includes(file.path))
         throw new Error(`계획에 선언되지 않은 변경입니다: ${file.path}`);
+      if (state.testFailure?.status === "repairing" &&
+          (state.testing?.plan.files.includes(file.path) || /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:test|spec)\.[^.]+$|(?:^|\/)package\.json$/i.test(file.path)))
+        throw new Error(`실패 복구 중에는 원래 테스트와 실행 설정을 변경할 수 없습니다: ${file.path}`);
       if (
         task.kind === "test" &&
         !(task.testFiles ?? state.testing.plan.files).includes(file.path)
@@ -729,6 +733,12 @@ export class Workflow {
         "gpt",
         "변경 파일과 검증 결과를 읽기 전용으로 재검토합니다.",
       );
+      state.testFailure = testFailure(state.validation, state.ownership);
+      if (state.testFailure?.status === "intervention") {
+        state.status = "awaiting_validation";
+        await this.record(run, "system", state.testFailure.reason);
+        return;
+      }
       const context = {
         snapshot: frozen,
         tasks: state.tasks,
@@ -748,7 +758,7 @@ export class Workflow {
           ),
         },
       ];
-      if (!reviews[0].issues.length) {
+      if (!reviews[0].issues.length && !state.testFailure) {
         const participants = teamFor(state.options).map((agent) => agent.id);
         state.status = "final_review";
         await this.record(
@@ -786,6 +796,39 @@ export class Workflow {
           issues: review.issues,
           snapshotHash: frozen.hash,
         });
+      if (state.validation.requiresConsent) issues.length = 0;
+      if (state.testFailure) {
+        const failure = state.testFailure;
+        const issueCount = issues.length;
+        for (let index = issues.length - 1; index >= 0; index--)
+          if (state.tasks.some((task) => task.id === issues[index].taskId && task.kind === "test")) issues.splice(index, 1);
+        const affected = state.tasks.filter((task) => task.kind !== "test" && failure.owners.includes(task.id));
+        const implementation = state.tasks.filter((task) => task.kind === "feature" || task.kind === "ui");
+        const target = affected.length === 1 ? affected[0] : !affected.length && implementation.length === 1 ? implementation[0] : null;
+        const repeated = failure.signature === state.lastTestFailureSignature;
+        const testOnly = issueCount > 0 && !issues.length;
+        if (!repeated && !testOnly && !issues.length && target)
+          issues.push({ taskId: target.id, owner: target.owner,
+            description: "원래 테스트와 완료 기준을 유지하며 실패 원인을 수정하세요. " + [...failure.names, ...failure.stack].join("\n") });
+        failure.owners = [...new Set(issues.map((issue) => issue.owner))];
+        failure.reason = repeated ? "같은 테스트 실패가 반복됐습니다. 로그를 확인하고 수정 방향을 정해 주세요."
+          : testOnly ? "검토에서 테스트 자체의 문제가 발견됐습니다. 원래 테스트를 유지했으니 기대값과 검증 기준을 확인해 주세요."
+          : !issues.length ? "실패 원인을 담당 작업에 연결하지 못했습니다. 로그를 확인해 주세요."
+          : state.round >= state.options.maxRepairRounds ? "자동 수정 한도에 도달했습니다. 남은 실패를 확인해 주세요."
+          : "담당 AI가 실패 원인을 수정한 뒤 같은 검증을 다시 실행합니다.";
+        if (repeated || !issues.length || state.round >= state.options.maxRepairRounds) {
+          failure.status = "intervention";
+          state.status = "needs_attention";
+          await this.record(run, "system", failure.reason);
+          return;
+        }
+        failure.status = "repairing";
+        state.lastTestFailureSignature = failure.signature;
+        for (const issue of issues)
+          issue.description += "\n실패 증거: " + [...failure.names, ...failure.stack].join("\n");
+      } else {
+        delete state.lastTestFailureSignature;
+      }
       if (!issues.length) {
         const finalStatus =
           state.validation.configured && state.validation.passed &&
@@ -823,6 +866,7 @@ export class Workflow {
         for (const task of state.tasks)
           if (
             !selected.has(task.id) &&
+            !(state.testFailure?.status === "repairing" && task.kind === "test") &&
             task.dependsOn.some((id) => selected.has(id))
           ) {
             selected.add(task.id);
@@ -923,6 +967,11 @@ export class Workflow {
             stale: true,
             summary: "검증 중 소스가 변경되었습니다.",
           };
+        state.testFailure = testFailure(state.validation, state.ownership);
+        if (state.testFailure?.status === "diagnosed") {
+          state.testFailure.status = "intervention";
+          state.testFailure.reason = "재실행에서도 테스트가 실패했습니다. 로그를 확인한 뒤 새 작업으로 수정을 요청하세요.";
+        }
         await this.testingResult(run);
         const reviewed =
           state.reviews?.length &&

@@ -148,3 +148,84 @@ test("declining GitHub still asks separately about the Vercel destination", asyn
   assert.deepEqual(result().decisions, { github: false, vercel: false });
   assert.equal(result().status, "completed");
 });
+
+test("Vercel retry uses the matching deployment and rejects uncertain remote state", async () => {
+  const { priorVercelDeployment } = await import("../src/core/services.js");
+  const listing = (state, run = "run") => JSON.stringify({ deployments: [
+    { state, url: "preview-123.vercel.app", meta: { handsOffRun: run } },
+  ] });
+  assert.equal(priorVercelDeployment(listing("READY"), "run"), "https://preview-123.vercel.app");
+  assert.equal(priorVercelDeployment(listing("ERROR"), "run"), null);
+  assert.equal(priorVercelDeployment('{"deployments":[]}', "run"), null);
+  assert.throws(() => priorVercelDeployment(listing("BUILDING"), "run"), /처리 중/);
+  assert.throws(() => priorVercelDeployment(listing("READY", "other"), "run"), /확인/);
+  assert.throws(() => priorVercelDeployment("", "run"), /JSON/);
+});
+
+for (const existing of [false, true]) test("Git push interruption preserves the exact commit with existing parent " + existing, async (t) => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { Store } = await import("../src/core/store.js");
+  const { pushVerifiedCommit } = await import("../src/core/release-commit.js");
+  const execute = promisify(execFile);
+  try { await execute("git", ["--version"]); }
+  catch { t.skip("Git CLI unavailable"); return; }
+  const root = await mkdtemp(join(tmpdir(), "cw-release-test-"));
+  t.after(() => rm(root, {recursive:true, force:true, maxRetries:5, retryDelay:100}));
+  const { pathToFileURL } = await import("node:url");
+  const remote = join(root, "remote.git");
+  const url = pathToFileURL(remote).href;
+  const store = new Store(join(root, "store"), {});
+  await store.init();
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^GIT_/i.test(key)));
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_CONFIG_GLOBAL = join(root, "empty-git-config");
+  const git = (cwd) => async (...args) => (await execute("git", args, {cwd, env})).stdout.trim();
+  await git(root)("init", "--bare", "--initial-branch=main", remote);
+  let prior;
+  if (existing) {
+    const seed = join(root, "seed");
+    await mkdir(seed);
+    const run = git(seed);
+    await run("init", "--initial-branch=main", "--template=");
+    await writeFile(join(seed, "index.html"), "<title>Previous</title>");
+    await run("add", ".");
+    await run("-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-m", "Previous");
+    prior = await run("rev-parse", "HEAD");
+    await run("push", url, "HEAD:refs/heads/main");
+  }
+  const identity = ["project", "run", "verified"];
+  let pushes = 0;
+  let attempted;
+  for (const index of [1, 2, 3]) {
+    const cwd = join(root, "stage-" + index);
+    await mkdir(cwd);
+    const real = git(cwd);
+    await real("init", "--initial-branch=main", "--template=");
+    const parent = index === 3 ? await git(remote)("rev-parse", "main") : prior;
+    if (parent) {
+      await real("fetch", url, "refs/heads/main");
+      await real("reset", "--soft", "FETCH_HEAD");
+    }
+    await writeFile(join(cwd, "index.html"), "<title>Verified</title>");
+    await real("add", ".");
+    const gitRun = async (...args) => {
+      if (args[0] !== "push") return real(...args);
+      pushes++;
+      const commit = await real("rev-parse", "HEAD");
+      if (index === 1) attempted = commit;
+      else {
+        assert.equal(commit, attempted);
+        await real(...args);
+      }
+      throw new Error("connection lost");
+    };
+    const attempt = pushVerifiedCommit({gitRun, url, cwd, store, identity, parent, expectedParent: prior, account: "fixture"});
+    if (index < 3) await assert.rejects(attempt, /connection lost/);
+    else assert.equal((await attempt).commit, attempted);
+  }
+  assert.equal(pushes, 2);
+  assert.equal(await git(remote)("rev-list", "--count", "main"), existing ? "2" : "1");
+});

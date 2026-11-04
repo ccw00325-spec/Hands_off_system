@@ -14,7 +14,7 @@ export function conversationTree(projects, index, activeId, actions) {
     .value.toLowerCase();
   for (const project of projects.items) {
     const rows = (index?.items ?? [])
-      .filter((row) => row.projectId === project.id)
+      .filter((row) => row.projectId === project.id && !row.archived)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const matching = rows.filter(
       (row) =>

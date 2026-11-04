@@ -2773,3 +2773,9 @@ body[data-sidebar="off"] .workbench-shell {
 .image-canvas { position: relative; padding-top: 66px; }
 .image-provider-controls { position: absolute; top: 12px; right: 12px; left: 12px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .image-provider-controls label { display: flex; align-items: center; gap: 8px; }
+
+#history-dialog { width: min(650px, calc(100vw - 32px)); }
+#history-select { max-width: 100%; }
+#test-recovery { border-left: 2px solid #d5a45b; padding: 8px 10px; margin-bottom: 12px; overflow-wrap: anywhere; }
+#test-recovery[hidden] { display: none; }
+#test-recovery-details { white-space: pre-wrap; max-height: 12em; overflow: auto; }

@@ -95,7 +95,7 @@
     <div class="workbench-shell">
       <aside class="project-sidebar" aria-label="프로젝트 탐색기">
         <header>
-          <span class="log-label">WORKSPACE</span
+          <span class="log-label">WORKSPACE</span><button id="open-history" type="button" class="text-button">기록 관리</button
           ><button
             id="sidebar-new-project"
             class="text-button"
@@ -630,6 +630,11 @@
         </details>
 
         <section class="testing-inspector">
+          <div id="test-recovery" hidden role="status">
+            <strong id="test-recovery-title"></strong>
+            <p id="test-recovery-reason"></p>
+            <details><summary>실패한 테스트와 스택 보기</summary><pre id="test-recovery-details"></pre></details>
+          </div>
           <header>
             <strong>테스트 설계·실행</strong
             ><span id="testing-status">미선택</span>
@@ -1138,6 +1143,19 @@
       </div>
     </dialog>
 
+    <dialog id="history-dialog" aria-labelledby="history-title">
+      <header class="dialog-heading"><h2 id="history-title">프로젝트 대화 기록</h2><button id="close-history" type="button" class="icon-button" aria-label="닫기">×</button></header>
+      <div class="tour-content">
+        <p class="hint">보관은 목록에서 숨깁니다. 삭제는 대화만 지웁니다. 작업 폴더의 실행 로그와 복원 기록은 유지됩니다.</p>
+        <label>대화 선택 <select id="history-select"></select></label>
+        <p id="history-confirm-text" class="hint" hidden>이 대화를 영구 삭제합니다. 실행 로그와 체크포인트는 남습니다.</p>
+        <div class="action-row">
+          <button id="history-export" type="button">Markdown 내보내기</button>
+          <button id="history-archive" type="button">보관</button>
+          <button id="history-delete" type="button" class="danger">삭제…</button>
+        </div>
+      </div>
+    </dialog>
     <dialog id="checkpoints-dialog" aria-labelledby="checkpoints-title">
       <header class="dialog-heading">
         <h2 id="checkpoints-title">복원 미리보기</h2>
@@ -1220,6 +1238,7 @@
             ><button data-service-login="supabase">로그인</button>
           </div>
         </div>
+        <p id="supabase-connection-hint" class="hint"></p>
         <button id="refresh-services" class="subtle">
           연결 상태 다시 확인
         </button>
