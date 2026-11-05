@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  realpath,
   writeFile,
   symlink,
   rm,
@@ -51,7 +52,7 @@ test("generated outputs go to the granted folder and stop after revocation", asy
     "export const ready = true;",
   );
   const persisted = await projects.list();
-  assert.equal(persisted.items[0].workspace.root, root);
+  assert.equal(persisted.items[0].workspace.root, await realpath(root));
   await projects.revoke(id);
   await assert.rejects(
     workspace.write(id, "src/blocked.js", "no", { grantId: grant.grantId }),
@@ -157,5 +158,22 @@ test("account configuration locations cannot be granted, browsed, or directly re
     await assert.rejects(workspace.prepare(id, profile), /인증 데이터/);
     await assert.rejects(workspace.read(id, `${folder}/${file}`), /허용되지/);
     assert.ok(!(await workspace.tree(id)).files.some((row) => row.path.startsWith(folder)));
+  }
+});
+
+test('temporary-folder aliases use canonical roots without opening authentication locations', async t => {
+  const {base,workspace,id} = await fixture(t);
+  const target = join(base,'canonical-temp'), alias = join(base,'temp-alias');
+  await mkdir(target);await mkdir(join(target,'project'));await symlink(target,alias,process.platform==='win32'?'junction':'dir');
+  const names = process.platform==='win32'?['TEMP','TMP']:['TMPDIR'];
+  const original = Object.fromEntries(names.map(name=>[name,process.env[name]]));
+  try {
+    for (const name of names) process.env[name]=alias;
+    const pending = await workspace.prepare(id,join(alias,'project'));
+    assert.equal(pending.root,await realpath(join(target,'project')));
+    const {homedir}=await import('node:os');
+    await assert.rejects(workspace.prepare(id,homedir()),/인증 데이터/);
+  } finally {
+    for (const name of names) if(original[name]===undefined)delete process.env[name];else process.env[name]=original[name];
   }
 });

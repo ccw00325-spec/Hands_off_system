@@ -93,14 +93,16 @@ export class Workspace {
       this.projects.store.directory,
     ));
   }
-  assertProjectRoot(root) {
-    const home = resolve(homedir());
-    const candidates = [process.env.CODEX_HOME, process.env.CLAUDE_CONFIG_DIR,
+  async assertProjectRoot(root) {
+    const canonical = async path => realpath(path).catch(() => resolve(path));
+    const home = await canonical(homedir()), temporary = await canonical(tmpdir());
+    const candidates = await Promise.all([process.env.CODEX_HOME, process.env.CLAUDE_CONFIG_DIR,
       process.env.GH_CONFIG_DIR, process.env.GEMINI_CLI_HOME, process.env.XDG_CONFIG_HOME]
-      .filter((path) => path && isAbsolute(path));
-    const osProfile = [process.env.APPDATA, process.env.LOCALAPPDATA]
+      .filter((path) => path && isAbsolute(path)).map(canonical));
+    const profiles = await Promise.all([process.env.APPDATA, process.env.LOCALAPPDATA].filter(path => path && isAbsolute(path)).map(canonical));
+    const osProfile = profiles
       .some((path) => path && isAbsolute(path) && inside(path, root));
-    if (inside(root, home) || (osProfile && (root === resolve(tmpdir()) || !inside(tmpdir(), root))) ||
+    if (inside(root, home) || (osProfile && (root === temporary || !inside(temporary, root))) ||
         candidates.some((path) => inside(path, root)) ||
         root.split(/[\\/]/).some((part) => CREDENTIAL_DIRECTORIES.has(part.toLowerCase())) ||
         inside(join(home, "Library", "Application Support"), root))
@@ -110,7 +112,7 @@ export class Workspace {
     if (projectId !== null)
       this.projects.find(await this.projects.list(), projectId);
     const root = await realpath(folder);
-    this.assertProjectRoot(root);
+    await this.assertProjectRoot(root);
     const privateRoot = await this.privateRoot();
     if (privateRoot && inside(privateRoot, root))
       throw new Error(
@@ -191,7 +193,7 @@ export class Workspace {
       throw new Error(
         "작업 폴더가 교체되었습니다. 폴더를 다시 선택하고 동의하세요.",
       );
-    this.assertProjectRoot(root);
+    await this.assertProjectRoot(root);
     return grant;
   }
   async setExecutionApproval(projectId, grantId, approved) {
