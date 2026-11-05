@@ -12,6 +12,7 @@ import { testPlanMarkdown } from "./test-plan.js";
 import { stateHandoff } from './handoff.js';
 import { layoutPreview } from './layout-preview.js';
 import { clarificationQuestions, clarificationAnswers } from './clarifications.js';
+import { reviewOrder, orderDebugTasks, sortReviewAgents } from './review-order.js';
 
 const ACTIVE = new Set([
   "testing",
@@ -502,6 +503,8 @@ export class Workflow {
             }
           : task,
       issues,
+      validation: state.validation ? { ...state.validation, stale: true } : null,
+      previousTaskReports: state.tasks.filter(row=>row.status==='reported').map(row=>({id:row.id,owner:row.owner,kind:row.kind,summary:row.report?.summary})),
       spec: state.spec,
       design: state.design?.status === "approved" ? state.design : undefined,
       snapshot,
@@ -551,7 +554,7 @@ export class Workflow {
       (state.ownership?.[path] && state.ownership[path].taskId !== task.id),
     );
     if (state.options.crossReview && risky.length) {
-      const peers = teamFor(state.options).filter((agent) => agent.id !== task.owner);
+      const peers = sortReviewAgents(teamFor(state.options)).filter((agent) => agent.id !== task.owner);
       const reviewer = peers.find((agent) => agent.roles.includes("review")) ?? peers[0];
       if (!reviewer) throw new Error("위험 변경을 검토할 다른 작업 패널이 필요합니다.");
       const staged = new Map(snapshot.files.map((file) => [file.path, file]));
@@ -658,6 +661,42 @@ export class Workflow {
       }
     }
   }
+  async sequentialReview(run, frozen) {
+    const { state } = run;
+    const participants = reviewOrder(state.options);
+    state.reviews = [];
+    state.reviewChain = participants.map(agent=>({actor:agent.id,provider:agent.provider,
+      roles:agent.roles.filter(role=>['control','debug','review'].includes(role)),status:'pending',round:state.round,snapshotHash:frozen.hash}));
+    state.status = 'reviewing';
+    await this.record(run,'system','순차 검토: '+participants.map(agent=>`${PROVIDER_NAMES[agent.provider]}${agent.id==='gpt'?' (컨트롤 타워 · 마지막)':''}`).join(' → '));
+    if (!state.validation?.configured || state.validation.requiresConsent || state.validation.stale) {
+      await this.record(run,'system','실행 검증 결과를 확인한 뒤 순차 검토를 시작합니다.');
+      return [];
+    }
+    for (const step of state.reviewChain) {
+      run.controller.signal.throwIfAborted();
+      step.status = 'working';
+      state.status = step.actor === 'gpt' ? 'final_review' : 'reviewing';
+      await this.record(run,step.actor,`${step.actor==='gpt'?'컨트롤 타워 최종':'디버깅·코드'} 검토를 시작합니다. 이전 결과와 같은 파일 버전을 확인합니다.`,{activity:'sequential-review',reviewActor:step.actor});
+      const result = validateReview(await this.callAgent(run,step.actor,'review',{
+        snapshot:frozen,tasks:state.tasks,ownership:state.ownership,
+        validation:{...state.validation,mutation:state.mutation},spec:state.spec,
+        priorReviews:structuredClone(state.reviews),reviewSequence:participants.map(agent=>agent.id),reviewScope:step.roles,
+        signal:run.controller.signal,options:state.options,
+      }),state.tasks,state.ownership);
+      if ((await this.snapshot(run)).hash !== frozen.hash) throw new Error('순차 검토 중 파일이 변경되었습니다. 검토를 중단하고 다시 검증하세요.');
+      const review = {...result,actor:step.actor,snapshotHash:frozen.hash,round:state.round};
+      state.reviews.push(review);
+      step.provider = result.executedProvider ?? step.provider;
+      step.summary = result.summary;
+      step.issueCount = result.issues.length;
+      step.status = result.issues.length ? 'changes' : !state.validation.passed || (state.options.mutation && !state.mutation?.passed) ? 'blocked' : 'passed';
+      await this.record(run,step.actor,`${step.status==='passed'?'OK':step.status==='changes'?'수정 필요':'실행 검증 확인 필요'} · ${result.summary}`,
+        {activity:'sequential-review',reviewActor:step.actor,issues:result.issues,snapshotHash:frozen.hash,provider:step.provider});
+      if (step.status !== 'passed') break;
+    }
+    return state.reviews;
+  }
   async execute(run) {
     const { state } = run;
     const snapshot = await this.snapshot(run);
@@ -681,12 +720,11 @@ export class Workflow {
         signal: run.controller.signal,
       });
       try {
-        plan = validatePlan(
+        plan = validatePlan(orderDebugTasks(
           state.options.funContract
             ? compileFunPlan(proposed, state.options)
             : proposed,
-          state.options,
-        );
+          state.options), state.options);
         break;
       } catch (error) {
         if (attempt) throw error;
@@ -764,6 +802,8 @@ export class Workflow {
     );
     while (true) {
       state.status = "validating";
+      state.reviewChain = [];
+      state.reviews = [];
       if (state.testing)
         state.testing.status = state.options.allowExecution
           ? "running"
@@ -834,45 +874,7 @@ export class Workflow {
         await this.record(run, "system", state.testFailure.reason);
         return;
       }
-      const context = {
-        snapshot: frozen,
-        tasks: state.tasks,
-        ownership: state.ownership,
-        validation: { ...state.validation, mutation: state.mutation },
-        spec: state.spec,
-        signal: run.controller.signal,
-        options: state.options,
-      };
-      let reviews = [
-        {
-          actor: "gpt",
-          ...validateReview(
-            await this.callAgent(run, "gpt", "review", context),
-            state.tasks,
-            state.ownership,
-          ),
-        },
-      ];
-      if (!reviews[0].issues.length && !state.testFailure) {
-        const participants = teamFor(state.options).map((agent) => agent.id);
-        state.status = "final_review";
-        await this.record(
-          run,
-          "gpt",
-          `같은 파일 버전을 ${participants.length}개 패널의 AI 세션이 읽기 전용으로 최종 검사합니다.`,
-        );
-        const final = await Promise.all(
-          participants.map(async (actor) => ({
-            actor,
-            ...validateReview(
-              await this.callAgent(run, actor, "review", context),
-              state.tasks,
-              state.ownership,
-            ),
-          })),
-        );
-        reviews.push(...final);
-      }
+      const reviews = await this.sequentialReview(run, frozen);
       run.controller.signal.throwIfAborted();
       const after = await this.snapshot(run);
       if (after.hash !== frozen.hash)
@@ -886,12 +888,6 @@ export class Workflow {
           state.tasks.some((task) => task.id === issue.taskId && task.kind === "test")
         ),
       );
-      for (const review of reviews)
-        await this.record(run, review.actor, review.summary, {
-          ...(review.executedProvider?{provider:review.executedProvider}:{}),
-          issues: review.issues,
-          snapshotHash: frozen.hash,
-        });
       if (state.validation.requiresConsent) issues.length = 0;
       if (state.testFailure) {
         const failure = state.testFailure;
@@ -928,6 +924,7 @@ export class Workflow {
       if (!issues.length) {
         const finalStatus =
           state.validation.configured && state.validation.passed &&
+          state.reviewChain?.length && state.reviewChain.every(step=>step.status==='passed') &&
           (!state.options.mutation || state.mutation?.passed)
             ? "completed"
             : "awaiting_validation";
@@ -938,7 +935,7 @@ export class Workflow {
           "gpt",
           state.status === "completed"
             ? "검증과 최종 검토를 통과했습니다."
-            : "코드 검토는 끝났습니다. 기본 테스트 또는 선택한 뮤테이션 테스트를 확인하세요.",
+            : "순차 검토가 아직 완료되지 않았습니다. 기본 테스트 또는 선택한 뮤테이션 테스트를 확인하세요.",
         );
         return;
       }
@@ -1044,6 +1041,8 @@ export class Workflow {
       state.testing.status = state.options.allowExecution
         ? "running"
         : "permission";
+      state.reviewChain = [];
+      state.reviews = [];
       await this.record(run, "system", "저장된 테스트를 다시 실행합니다.");
       run.promise = (async () => {
         state.validation = await this.validate({
@@ -1074,9 +1073,9 @@ export class Workflow {
           state.testFailure.reason = "재실행에서도 테스트가 실패했습니다. 로그를 확인한 뒤 새 작업으로 수정을 요청하세요.";
         }
         await this.testingResult(run);
-        const reviewed =
-          state.reviews?.length &&
-          state.reviews.every((review) => !review.issues.length);
+        if (state.validation.passed && !state.validation.stale) await this.sequentialReview(run, after);
+        const reviewed = state.reviewChain?.length && state.reviewChain.every(step=>step.status==='passed') &&
+          state.reviews?.length === state.reviewChain.length && state.reviews.every(review=>!review.issues.length);
         const finalStatus = state.validation.passed && reviewed ? "completed" : "awaiting_validation";
         if (finalStatus === "completed") await markVerified(this.workspace, projectId, state.grantId, after);
         state.status = finalStatus;

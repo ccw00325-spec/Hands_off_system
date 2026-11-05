@@ -1,7 +1,7 @@
 import { CursorConnection } from "./cursor.js";
 import {
   BUILD_FORMAT,
-  REVIEW_FORMAT,
+  reviewInstructions,
   planningInstructions,
 } from "./providers.js";
 import { isolatedRequest } from "./isolated-request.js";
@@ -78,7 +78,7 @@ export class CursorProvider {
     return this.ask(await planningInstructions(undefined, context.options), context);
   }
   review(context) {
-    return this.ask(REVIEW_FORMAT, context);
+    return this.ask(reviewInstructions(), context);
   }
   cancel() {
     this.connection.cancel();

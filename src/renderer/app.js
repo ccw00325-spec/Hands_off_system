@@ -1070,6 +1070,13 @@ async function loadApprovedPreview(run) {
 }
 function renderWorkflow(run) {
   currentRun = run;
+  $('#review-chain-panel').hidden = !run?.reviewChain?.length;
+  $('#review-chain-list').replaceChildren(...(run?.reviewChain??[]).map((step,index)=>{
+    const item=document.createElement('li');item.dataset.reviewActor=step.actor;item.dataset.reviewStatus=step.status;
+    const labels={pending:'대기',working:'검토 중',passed:'OK',changes:'수정 필요',blocked:'테스트 확인 필요'};
+    item.textContent=`${index+1}. ${AI_NAMES[step.provider]}${step.actor==='gpt'?' · 컨트롤 타워 (마지막)':''} — ${labels[step.status]??step.status}${step.summary?' · '+step.summary:''}`;
+    return item;
+  }));
   clarificationUI.update(run);
   const failure = run?.testFailure;
   $("#test-recovery").hidden = !failure;
@@ -1687,12 +1694,14 @@ $("#roles-connections").addEventListener("click", () => {
   $("#roles-dialog").close();
   openConnections();
 });
-$("#agent-count").addEventListener("change", (event) => {
+$("#agent-count").addEventListener("change", async (event) => {
+  const control=event.target,button=$('#save-roles');
+  control.disabled=true;button.disabled=true;
   try {
-    resizeEditor(Number(event.target.value), panelModelCatalog);
+    await resizeEditor(Number(event.target.value), panelModelCatalog);
   } catch (error) {
     toast(error.message, "error");
-  }
+  } finally {control.disabled=false;button.disabled=false;}
 });
 $("#roles-form").addEventListener("submit", (event) => {
   event.preventDefault();

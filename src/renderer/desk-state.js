@@ -84,7 +84,7 @@ export function agentRows(run, team, connections = {}) {
         cancelled: ["작업", "cancelled", "중지됨"],
         interrupted: ["이전 작업", "cancelled", "중단됨"],
       }[run?.status] ?? ["작업 결과 취합", "pending", "대기"];
-      if (run)
+      if (run && !(['reviewing','final_review'].includes(run.status)&&run.reviewChain?.length))
         entries.push({
           id: "controller-phase",
           title: phase[0],
@@ -93,6 +93,10 @@ export function agentRows(run, team, connections = {}) {
         });
       tasks.unshift(...entries);
     }
+    const review=run?.reviewChain?.find(step=>step.actor===agent.id);
+    if(review)tasks.push({id:'review-chain',title:agent.id==='gpt'?'컨트롤 타워 최종 검토':'순차 디버깅·코드 검토',
+      status:({pending:'pending',working:'working',passed:'reported',changes:'failed',blocked:'blocked'})[review.status]??'pending',
+      label:({pending:'대기',working:'검토 중',passed:'OK',changes:'수정 필요',blocked:'테스트 확인 필요'})[review.status]??'대기',provider:review.provider});
     const working = tasks.filter((task) => task.status === "working");
     const recent = [...new Set([...tasks.slice(-2), ...working])];
     return {

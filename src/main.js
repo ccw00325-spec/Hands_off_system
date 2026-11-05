@@ -12,7 +12,7 @@ import { join, dirname, resolve, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { Store } from "./core/store.js";
+import { Store, atomicWrite } from "./core/store.js";
 import { NotificationInbox } from "./core/notifications.js";
 import { ChatGPTAuth, PLAN_SCOPE } from "./core/oauth.js";
 import { ImageService } from "./core/images.js";
@@ -98,6 +98,7 @@ let shuttingDown=false;
 let mainDocumentLoaded = false, workspaceReady = false, revealScheduled = false;
 const startupDiagnostics = [];
 let diagnosticWrite = Promise.resolve();
+let pendingDiagnostics = 0, flushingQuit = false;
 function recordStartupFailure(stage, error, attempt) {
   // Deliberately exclude URLs, paths, exception messages and account data.
   startupDiagnostics.push({
@@ -105,10 +106,11 @@ function recordStartupFailure(stage, error, attempt) {
     code: ['ERR_FAILED', 'ERR_ABORTED', 'ERR_FILE_NOT_FOUND', 'ERR_ACCESS_DENIED', 'ENOENT', 'EACCES'].includes(error.code) ? error.code : 'OTHER',
     errno: Number.isInteger(error.errno) ? error.errno : null,
   });
+  pendingDiagnostics++;
   diagnosticWrite = diagnosticWrite.catch(() => {}).then(async () => {
     await mkdir(app.getPath('userData'), { recursive: true });
-    await writeFile(join(app.getPath('userData'), 'startup-diagnostics.json'), JSON.stringify(startupDiagnostics.slice(-30), null, 2), { mode: 0o600 });
-  }).catch(() => {});
+    await atomicWrite(join(app.getPath('userData'), 'startup-diagnostics.json'), JSON.stringify(startupDiagnostics.slice(-30), null, 2));
+  }).catch(() => {}).finally(() => { pendingDiagnostics--; });
   return diagnosticWrite;
 }
 let startupPhase = {
@@ -806,6 +808,13 @@ else {
       handle("tower:roles", (id) => roles.get(id));
       handle("tower:set-roles", (id, value) => roles.set(id, value));
       handle("tower:team", (id) => roles.getTeam(id));
+      handle('tower:confirm-cursor-ui-role', async () => {
+        const answer=await dialog.showMessageBox(window,{type:'warning',title:'Cursor UI 역할 선택 확인',
+          message:'Cursor에게 UI 구현·연결을 맡기는 것은 현재 권장 설정에서 추천하지 않습니다. 선택하시겠습니까?',
+          detail:'기능 구현·디버깅·코드 검토·테스트는 선택할 수 있습니다. UI는 다른 AI를 사용할 수 있으며, 계속 선택해도 실제 작업 시의 승인 절차는 유지됩니다.',
+          buttons:['취소','UI 역할 선택'],defaultId:0,cancelId:0,noLink:true});
+        return answer.response===1;
+      });
       handle("tower:set-team", (id, value) => roles.setTeam(id, value));
       const signIn = (provider) => {
         if (provider === "claude") return claude.login;
@@ -1194,8 +1203,15 @@ else {
       app.quit();
     }
   });
-  app.on("before-quit", () => {
+  app.on("before-quit", event => {
     shuttingDown=true;
+    if (pendingDiagnostics) {
+      event.preventDefault();
+      if (!flushingQuit) {
+        flushingQuit=true;
+        void diagnosticWrite.finally(()=>{flushingQuit=false;app.quit();});
+      }
+    }
     auth?.cancel();
     claude?.cancel();
     grok?.cancel();

@@ -315,7 +315,7 @@ for (const permission of [false, true])
         await engine.runs.get(f.id).promise;
         state = await engine.current(f.id);
         assert.equal(state.status, "completed");
-        assert.equal(reviews, prior);
+        assert.ok(reviews > prior, 'A new passing test result must reach the sequential reviewers before completion');
       }
       const report = await f.workspace.read(
         f.id,

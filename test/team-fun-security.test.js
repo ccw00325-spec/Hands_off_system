@@ -68,7 +68,7 @@ function contract(team) {
       {
         id: "screen",
         title: "Screen",
-        owner: workers.find((agent) => agent.roles.includes("ui")).id,
+        owner: team.find((agent) => agent.roles.includes("ui")).id,
         kind: "ui",
         requirementIds: ["R2"],
         instructions: "Implement controls",
@@ -97,13 +97,13 @@ test("2..4 panels allow one GPT login, duplicate capabilities and multi-role age
     defaultTeam({ gpt: "gpt", grok: "gpt", claude: "gpt" }),
     2,
   );
-  assert.deepEqual(two[1].roles, ["feature", "debug", "review", "ui"]);
+  assert.deepEqual(two[1].roles, ["feature", "debug", "review", "ui", "test"]);
   assert.ok(two[0].roles.includes("test"));
   assert.ok(two.every((agent) => agent.provider === "gpt"));
   const four = resizeTeam(two, 4);
   assert.equal(four.length, 4);
   assert.ok(four[1].roles.includes("ui") && !four[2].roles.includes("ui"));
-  assert.deepEqual(four[3].roles, ["debug", "review"]);
+  assert.deepEqual(four[3].roles, ["debug", "review", "test"]);
   assert.throws(() => validateTeam(two.slice(0, 1)));
   assert.throws(() =>
     validateTeam([...four, { id: "fifth", provider: "gpt", roles: ["debug"] }]),
@@ -213,7 +213,7 @@ for (const count of [2, 3, 4])
     assert.equal(state.status, "completed");
     assert.equal(state.requirements.length, 2);
     assert.equal(state.governance.contractVersion, 1);
-    assert.equal(reviews, count + 1);
+    assert.equal(reviews, count);
     assert.ok(owners.has("grok"));
     if (count > 2) {
       assert.ok(owners.has("claude"));

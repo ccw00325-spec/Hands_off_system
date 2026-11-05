@@ -2788,6 +2788,12 @@ body[data-sidebar="off"] .workbench-shell {
 @media(max-width:600px) { :root .prerequisite-row { grid-template-columns: 1fr auto; } :root .prerequisite-state { grid-column: 1; } }
 :root .layout-preview { padding: 28px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; max-height: 70vh; max-width: calc(100% - 32px); box-sizing: border-box; text-align: left; overflow: auto; color: #d3e4dd; background: #101714; border-radius: 10px; margin: 16px; }
 .work-skill-options { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; padding:12px 0 6px; }
+#review-chain-panel { padding:16px 24px; border-bottom:1px solid #30343a; }
+#review-chain-panel[hidden] { display:none; }
+#review-chain-list { display:grid; gap:10px; padding:0; list-style:none; }
+#review-chain-list li { overflow-wrap:anywhere; }
+#review-chain-list li[data-review-status=passed] { color:#85e4bd; }
+#review-chain-list li[data-review-status=working] { color:#e9d086; }
 .work-skill-options button[hidden] { display:none; }
 :root #fun-questions-dialog { padding:0; width:min(700px,calc(100vw - 32px)); max-height:88vh; overflow:auto; }
 #fun-questions-form > header { position:sticky; top:0; z-index:1; background:#161a1e; padding:20px 24px; }

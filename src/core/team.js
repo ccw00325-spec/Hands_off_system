@@ -121,7 +121,11 @@ export function resizeTeam(team, count) {
   }
   for (const role of ["feature", "ui"])
     if (!result.some((agent) => agent.roles.includes(role)))
-      result[1].roles.push(role);
+      (role === 'ui'
+        ? [...result].sort((a,b)=>(['claude','gpt','gemini','grok'].indexOf(a.provider)-['claude','gpt','gemini','grok'].indexOf(b.provider)) || Number(a.id==='gpt')-Number(b.id==='gpt'))[0]
+        : result[1]).roles.push(role);
+  for (const agent of result)
+    agent.roles = [...new Set([...agent.roles, 'debug', 'review', 'test'])];
   return validateTeam(exclusiveTeam(result),{exclusive:true});
 }
 export function agentLabel(agent) {

@@ -5,6 +5,7 @@ import {
   resizeTeam,
 } from "../core/team.js";
 import { providerIcon } from "./provider-icon.js";
+import { sortReviewAgents } from '../core/review-order.js';
 const $ = (selector) => document.querySelector(selector);
 function node(tag, text, cls) {
   const el = document.createElement(tag);
@@ -47,7 +48,16 @@ function uniqueRoles() {
           : "";
     }
   }
+  const selected = fields.map(field=>({id:field.dataset.agent,provider:field.querySelector('select').value,
+    roles:[...field.querySelectorAll('input:checked')].map(input=>input.value)}));
+  $('#role-review-order').textContent = '검토 순서: '+sortReviewAgents(selected.filter(agent=>agent.id==='gpt'||agent.roles.some(role=>['debug','review'].includes(role))))
+    .map(agent=>`${name(agent.provider)}${agent.id==='gpt'?' (컨트롤 타워 · 마지막)':''}`).join(' → ');
 }
+const confirmCursorUI = async () => {
+  const response = await window.tower.confirmCursorUIRole();
+  if (!response.ok) throw new Error(response.error);
+  return response.value === true;
+};
 export async function renderTeamEditor(team, catalog) {
   $("#agent-count").value = String(team.length);
   const container = $("#team-editor");
@@ -120,8 +130,18 @@ export async function renderTeamEditor(team, catalog) {
         if (ticket === generation) models.disabled = false;
       }
     }
-    select.addEventListener("change", () => {
+    let previousProvider = select.value;
+    select.addEventListener("change", async () => {
+      const ui = field.querySelector('input[value=ui]');
+      if (select.value==='grok' && ui.checked) {
+        field.dataset.cursorPending='true';
+        try { if (!(await confirmCursorUI())) { select.value=previousProvider; return; } }
+        catch { select.value=previousProvider; return; }
+        finally { delete field.dataset.cursorPending; }
+      }
+      previousProvider=select.value;
       options(models, select.value);
+      uniqueRoles();
       void load();
     });
     const roleTitle = node(
@@ -138,7 +158,15 @@ export async function renderTeamEditor(team, catalog) {
       input.type = "checkbox";
       input.value = role;
       input.checked = agent.roles.includes(role);
-      input.addEventListener("change", uniqueRoles);
+      input.addEventListener('change', async () => {
+        if(role==='ui' && input.checked && select.value==='grok') {
+          field.dataset.cursorPending='true';
+          try { if (!(await confirmCursorUI())) input.checked=false; }
+          catch { input.checked=false; }
+          finally { delete field.dataset.cursorPending; }
+        }
+        uniqueRoles();
+      });
       wrapper.append(input, document.createTextNode(value));
       checks.append(wrapper);
     }
@@ -240,6 +268,7 @@ function draft() {
   );
 }
 export function readTeamEditor() {
+  if ($('#team-editor [data-cursor-pending]')) throw new Error('Cursor UI 역할 선택을 먼저 확인해 주세요.');
   if([...$('#team-editor').querySelectorAll('.panel-model,.fallback-model')].some(select=>select.disabled&&!select.hidden))
     throw new Error('모델 목록을 불러오는 중입니다. 조회가 끝난 뒤 저장해 주세요.');
   return validateTeam(draft(), { exclusive: true });
@@ -254,12 +283,17 @@ export function refreshEditorModels(catalog){
   }
  }
 }
-export function resizeEditor(count, catalog) {
+export async function resizeEditor(count, catalog) {
   const team = draft();
   for (const row of team) if (!row.roles.length) row.roles = ["review"];
   for (const role of ["feature", "ui"])
     if (!team.some((row) => row.roles.includes(role))) team[1].roles.push(role);
   const resized = resizeTeam(team, count);
-  void renderTeamEditor(resized, catalog);
+  const assignedCursorUI = resized.some(agent=>agent.provider==='grok' && agent.roles.includes('ui') &&
+    !team.some(old=>old.id===agent.id&&old.provider==='grok'&&old.roles.includes('ui')));
+  try {
+    if (assignedCursorUI && !(await confirmCursorUI())) { $('#agent-count').value=String(team.length); return team; }
+  } catch(error) { $('#agent-count').value=String(team.length); throw error; }
+  await renderTeamEditor(resized, catalog);
   return resized;
 }

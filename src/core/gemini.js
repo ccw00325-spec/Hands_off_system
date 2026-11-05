@@ -6,8 +6,8 @@ import { RpcProcess } from "./rpc-process.js";
 import { authorizationURL } from "./login-flow.js";
 import {
   BUILD_FORMAT,
-  REVIEW_FORMAT,
   planningInstructions,
+  reviewInstructions,
 } from "./providers.js";
 import { objectJSON } from "./workflow.js";
 import { nativeEnvironment } from "./child-env.js";
@@ -466,6 +466,6 @@ export class GeminiProvider {
     return this.ask(CHAT_FORMAT, context);
   }
   review(context) {
-    return this.ask(REVIEW_FORMAT, context);
+    return this.ask(reviewInstructions(), context);
   }
 }
