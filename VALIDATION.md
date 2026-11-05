@@ -6,7 +6,17 @@
 - 별도 실계정 검사에서 실제 Codex ChatGPT 계획 호출 **1회**, 작업자 호출 **0회**로 질문 3개와 `needs_input`을 확인했다. 임시 프로젝트는 삭제했다. 이 실험은 모든 공급자의 실제 답변 동작이나 새 로그인까지 검증한 것이 아니다.
 - 실제 Windows 알림 API의 **show 이벤트**·`silent:false`·앱 ID와 Toast CLSID 등록을 확인했다. 테스트 시작 메뉴 바로가기는 정리했다. 물리적으로 소리가 들렸는지는 확인하지 않았으며 Windows 알림 권한·음량·방해 금지를 따른다. Mac의 ad-hoc 서명에서 OS 알림 동작은 보장하지 않고 앱 팝업·종 기록을 유지한다.
 - 새 Windows 포터블은 소스 **96개**·LICENSE/NOTICE **2개**·fuse **6개**가 일치하고 불일치·허용 목록 밖 파일은 0개다. 빈 프로필 실제 시작에서 메인 창 표시·시작 창 종료·진행률 100%·개발자 vault 미복사·ASAR 일치를 확인했다. 검증 후 이전 0.2.4 실행 파일을 정리했다. 로컬 파일 SHA-256: `987c02234c54c293130b69bc7a60c7a6a0fff22c4d5d6a9ede0ce44c1ef39276`.
-- 플랫폼별 최종 CI 결과와 다운로드 링크는 실행 완료 후 기록한다.
+- Windows x64, macOS 26 Apple Silicon, macOS 15 Intel에서 각각 단위·통합 **196개**와 화면·시작 **60개(41+6+6+3+4)**, 실제 배포 앱 시작을 통과했다. 각 패키지의 소스 96개·법적 고지 2개·보안 fuse 6개가 일치하고 불일치·허용 목록 밖 파일은 0개다. Mac `codesign --verify --deep --strict`도 통과했으나 ad-hoc 무결성 검사이며 Apple 공증을 뜻하지 않는다. [Windows·Linux 실행](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42120722946) · [Mac 실행](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42120734957)
+- Linux 실제 Docker **2개 시나리오**도 통과했다. 소스·최종 Windows ASAR Gitleaks 탐지 **0건**, 런타임 의존성 감사 **0건**이다. 기존 개발 의존성 minimatch의 중간 위험도 경고 1건은 남아 있고 배포 ASAR에 포함하지 않는다. Windows 코드 서명·Mac Developer ID 서명·공증은 적용하지 않았다.
+
+| 0.1.0 파일 | SHA-256 |
+| --- | --- |
+| 로컬 Windows 포터블 | `987c02234c54c293130b69bc7a60c7a6a0fff22c4d5d6a9ede0ce44c1ef39276` |
+| Windows CI 포터블 | `76ed9f61a829d852c53b41f805ed91d759fdb4c8b269b2673751d8b47016226d` |
+| Mac arm64 `.zip` | `067004832db1ac7df00078d3d8369fc875ba1af915946a3aef245717665eeeca` |
+| Mac x64 `.zip` | `a93d324f5ed5551bd6e022316ee85d04851811e52d689cbb2cacc41c932dce94` |
+
+패키지 소스·테스트 커밋은 `e30a45b5196c977b1f7d94ac5d95705045552002`다. 이후 문서 변경은 실행 파일을 바꾸지 않는다. GitHub Artifact의 바깥 압축 대신 안의 실제 `.exe` 또는 Mac `.zip`을 비교한다. 실계정 계획 1회는 별도 로컬 검사이며, CI는 유료 추론·새 로그인 승인·Mac 시스템 알림 표시를 수행했다고 주장하지 않는다.
 
 # 이전 배포 기준 0.2.4 · 2026-11-06
 

@@ -2,7 +2,7 @@
 
 - [x] 결정: /fun 빈칸 질문, 선택지와 직접 입력, Windows 알림·소리, /mut 옆 켜기/끄기, 버전 0.1.0 재설정.
 - [x] 구현: 컨트롤 타워 전용 스킬 로딩, 질문 중 구현 보류, 동일 작업 재개, 대화별 질문 식별·답변 검증, 네이티브 알림 클릭 연결.
-- [ ] 검증: 회귀·첫 실행·새 질문 시뮬레이션·배포 패키지와 두 플랫폼 CI 결과를 최종 검증 기록에 반영.
+- [x] 검증: 회귀·첫 실행·새 질문 시뮬레이션·배포 패키지와 두 플랫폼 CI 결과를 최종 검증 기록에 반영.
 
 ## Context → Trigger → Reaction
 
@@ -42,3 +42,5 @@ Feature: /fun 사용자 결정 확인
 원문 스킬은 컨트롤 타워에만 로드한다. `funContract`의 구조 검증은 스킬 활성화와 독립된 호스트 프로토콜이다. 끄면 `Function/*_fun.md` 대신 내부 일반 명세를 저장한다. 답변은 사실 인계에도 포함한다. 미제출 초안은 현재 실행 메모리에서만 유지하고 재시작 복원을 약속하지 않는다.
 
 Windows 포터블의 알림 등록은 현재 사용자의 시작 메뉴에 앱 전용 바로가기를 만들며 자동 시작이나 관리자 권한을 설정하지 않는다. 다른 앱의 바로가기는 덮어쓰지 않는다. 실제 표시·소리는 OS 권한·음량·방해 금지에 따른다. Mac의 미공증/ad-hoc 서명에서는 OS 알림이 제한될 수 있으므로 앱 팝업과 종 알림을 유지한다. 표시 여부와 물리적으로 소리가 들렸는지는 별개로 기록한다.
+
+플랫폼 구현 근거: [Electron 알림](https://www.electronjs.org/docs/latest/tutorial/notifications), [바로가기의 AppUserModelID·Toast CLSID](https://www.electronjs.org/docs/latest/api/structures/shortcut-details), [Notification의 silent 설정](https://www.electronjs.org/docs/latest/api/notification).

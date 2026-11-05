@@ -31,8 +31,8 @@ AI마다 같은 요구사항을 다시 설명하고, 한쪽에서 만든 코드�
 
 | 사용할 PC | 저장소 | 앱 다운로드 |
 | --- | --- | --- |
-| Windows x64 | [Windows 저장소](https://github.com/ccw00325-spec/Hands_off_system_window) | [Windows 실행 파일 받기](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42114719827) |
-| MacBook · Apple Silicon / Intel | [Mac 저장소](https://github.com/ccw00325-spec/Hands_off_system_mac) | [Mac 패키지 받기](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42114729397) |
+| Windows x64 | [Windows 저장소](https://github.com/ccw00325-spec/Hands_off_system_window) | [Windows 실행 파일 받기](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42120722946) |
+| MacBook · Apple Silicon / Intel | [Mac 저장소](https://github.com/ccw00325-spec/Hands_off_system_mac) | [Mac 패키지 받기](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42120734957) |
 
 다운로드 페이지에서 GitHub에 로그인하고 아래쪽 **Artifacts**를 펼치세요. Windows는 `Hands-off-Window-x64`, Mac은 CPU에 맞게 `Hands-off-Mac-arm64` 또는 `Hands-off-Mac-x64`를 선택합니다. 받은 압축 파일을 풀고 Windows는 `.exe`, Mac은 `.dmg` 또는 `.zip` 안의 앱을 실행하세요. Mac CPU는 **Apple 메뉴 → 이 Mac에 관하여**에서 확인할 수 있습니다. 파일 보관 기간은 30일입니다.
 
@@ -188,6 +188,8 @@ npm start
 ### /fun으로 빠진 조건 확인하기
 
 채팅창 아래 **/fun 요구사항 확인**은 기본적으로 켜져 있습니다. 컨트롤 타워가 요청에서 조건·입력·결과나 완료 기준의 빈칸을 발견하면 구현을 멈추고 팝업으로 질문합니다.
+
+`/fun`을 켠 작업에서는 설정의 **무질문 위임**보다 빈칸 확인을 우선합니다. 답을 미뤘다는 이유로 AI가 조건을 정해 구현하지 않습니다.
 
 ![선택지와 직접 입력으로 미정 조건에 답하는 /fun 질문 팝업](docs/screenshots/fun-questions.png)
 
