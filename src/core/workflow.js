@@ -313,11 +313,10 @@ export class Workflow {
     };
     const onProviderSwitch = async (change) => {
       state.options.runtimeRoutes ??= {};
-      if (state.options.runtimeRoutes[actor]) return;
       state.options.runtimeRoutes[actor] = { provider: change.provider, ...(change.modelId ? { modelId: change.modelId } : {}) };
       if (run.ephemeral) await run.routeChanged?.();
       else await this.record(run, actor,
-        `${PROVIDER_NAMES[change.from]} 사용 한도 소진 → ${PROVIDER_NAMES[change.provider]}로 전환합니다. 현재 작업과 완료 기준을 유지합니다.`,
+        `${PROVIDER_NAMES[change.from]} ${change.reason==="low_quota"?"잔여 한도 5% 이하":"사용 한도 소진"} → ${PROVIDER_NAMES[change.provider]}로 전환합니다. 현재 작업과 완료 기준을 유지합니다.`,
         { activity: "fallback", fromProvider: change.from, provider: change.provider, taskId: context.task?.id });
     };
     const onUsage = (input, output, model) => {
@@ -339,7 +338,9 @@ export class Workflow {
       const payload = {
         ...redactData(rest), signal, designImage,
         snapshot: providerSnapshot(snapshot),
-        options: { ...redactData(options), runtimeRoutes: state.options.runtimeRoutes ?? {}, onUsage, onProviderAttempt, onProviderSwitch },
+        options: { ...redactData(options), runtimeRoutes: state.options.runtimeRoutes ?? {}, exhaustedProviders: state.options.exhaustedProviders ??= [], cursorUiApproved: state.options.cursorUiApproved ??= [],
+          onCursorUiApproved: async key=>{if(!state.options.cursorUiApproved.includes(key))state.options.cursorUiApproved.push(key);},
+          onProviderExhausted: async provider=>{if(!state.options.exhaustedProviders.includes(provider))state.options.exhaustedProviders.push(provider);}, onUsage, onProviderAttempt, onProviderSwitch },
       };
       // Plain providers used by embedders/tests do not implement the routing hooks.
       if (!this.providers[actor].routed) await onProviderAttempt({ provider });

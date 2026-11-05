@@ -10,6 +10,7 @@ import { createMission } from "./mission-view.js";
 import { createAgentDesk } from "./agent-desk.js";
 import { createNotifications } from "./notification-view.js";
 import { displayedTeam } from "./desk-state.js";
+import {createGuide} from './guide.js';
 import { CAPABILITIES, SLOT_IDS, defaultTeam } from "../core/team.js";
 import {
   renderTeamEditor,
@@ -77,6 +78,7 @@ const activeRuns = new Map(),
   liveBuffers = new Map();
 desk = createAgentDesk({ onAction: missionAction });
 notifications = createNotifications(api, handleNotification);
+createGuide(missionAction);
 
 function toast(message, type = "") {
   notifications.push(message, type, { projectId: projectData?.activeId, conversationId: currentConversation?.id });
@@ -216,6 +218,7 @@ function renderImage() {
 async function refreshStatus() {
   const status = await call(api.status());
   connection = status;
+  panelCatalogCache.clear();
   $("#app-version").textContent = `LOCAL / ${status.appVersion}`;
   const account = status.accounts.find((item) => item.active);
   const usable = account?.planEnabled === true;
@@ -1175,7 +1178,6 @@ $("#start-workflow").addEventListener("click", () =>
     );
     $("#planner-input").value = "";
     if (result.state) {
-      $("#mutation-option").checked = false;
       activeRuns.set(projectId, result.state);
       if (
         projectData.activeId === projectId &&
@@ -1542,7 +1544,7 @@ function renderAssignedRoles() {
       panel.querySelector(".agent-name p").textContent =
         AI_NAMES[agent.provider] + " · 독립 실행 세션";
       const label = panel.querySelector(".worker-footer>span");
-      if (label) label.textContent = agent.modelId || "공급자 기본 모델";
+      if (label) label.textContent = agent.modelId || "현재 AI 계정의 자동 선택 모델";
     }
   }
   const feature = selected.find((agent) => agent.id === "grok");
@@ -1625,28 +1627,42 @@ function missionAction(target) {
   mission.select(actor, failed?.id);
   if (target === "controller") $("#planner-input").focus();
 }
+let openingRoles=false;
 async function openRoles(role = "gpt") {
-  if (!projectData) return;
+  if (!projectData||openingRoles) return;
+  openingRoles=true;
+  const trigger=$("#open-roles"),label=trigger.textContent;trigger.disabled=true;trigger.textContent="모델 확인 중…";
   const id = projectData.activeId;
   try {
     const selected = await call(api.team(id));
     if (projectData.activeId !== id) return;
     rolesDialogProjectId = id;
-    renderTeamEditor(selected, panelModelCatalog);
+    await renderTeamEditor(selected, panelModelCatalog);
+    if (projectData.activeId !== id) return;
     $("#roles-dialog").showModal();
     document.querySelector("#role-" + role)?.focus();
   } catch (error) {
     toast(error.message, "error");
-  }
+  } finally {openingRoles=false;trigger.disabled=false;trigger.textContent=label;}
 }
-async function panelModelCatalog(provider) {
+const panelCatalogCache = new Map();
+async function fetchPanelModelCatalog(provider) {
   if (provider === "gpt") return call(api.models());
-  if (provider === "grok") return call(api.grokModels());
-  if (provider === "gemini") return call(api.geminiModels());
+  if (provider === "grok") return (await call(api.grokModels())).map(row=>({...row,current:row.id===connection?.grok.modelId}));
+  if (provider === "gemini") return (await call(api.geminiModels())).map(row=>({...row,current:row.id===connection?.gemini.modelId}));
   return ["sonnet", "opus", "haiku"].map((id) => ({
     id,
     name: `${id} · Claude CLI 공식 별칭`,
   }));
+}
+function panelModelCatalog(provider) {
+  const cached=panelCatalogCache.get(provider);
+  if(cached&&Date.now()-cached.at<60000)return cached.promise;
+  let timeout;
+  const promise=Promise.race([fetchPanelModelCatalog(provider),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('조회 시간이 초과되었습니다. 계정 연결을 확인한 뒤 설정을 다시 열어 주세요.')),15000);})]).finally(()=>clearTimeout(timeout));
+  panelCatalogCache.set(provider,{at:Date.now(),promise});
+  promise.catch(()=>{if(panelCatalogCache.get(provider)?.promise===promise)panelCatalogCache.delete(provider);});
+  return promise;
 }
 $("#open-roles").addEventListener("click", () => openRoles());
 document

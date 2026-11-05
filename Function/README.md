@@ -1,6 +1,6 @@
 # 기능 명세 버전 안내
 
-현재 버전은 **0.1.9**이다. [세로 AI 데스크·한도 소진 대체 경로](agent_desk_fallback_fun.md)가 최신 배치·대화 팝업·알림·대체 AI 동작을 설명한다. [버전 관리 규칙](../docs/release-policy.md)은 0.1.0에서 시작해 patch를 올리며 0.1.9 다음은 0.2.0이다. 아래 문서의 과거 버전 번호·상하 배치는 이력으로 보존한다.
+현재 버전은 **0.2.0**이다. [AI 설정·자동 인계](role_settings_auto_handoff_fun.md)가 새 기본 역할, 모델 자동 조회, 단일 구현 담당과 팀 인계를 설명한다. [세로 AI 데스크](agent_desk_fallback_fun.md)의 팝업·알림 배치는 유지한다. [버전 규칙](../docs/release-policy.md)에 따라 0.1.9 다음은 0.2.0이다. 과거 문서는 이력으로 보존한다.
 
 v0.7의 최신 결정·구현·검증은 [테스트·대화 작업 공간 명세](test_conversation_workbench_fun.md)와 [검증 기록](../docs/verification-0.7.md)을 기준으로 한다. 아래 항목은 v0.6까지의 변경 이력이다.
 

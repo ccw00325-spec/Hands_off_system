@@ -326,10 +326,10 @@ export function createAgentDesk({ onAction }) {
             );
             const model = node(
               "small",
-              agent.modelId || "공급자 기본 모델",
+              agent.modelId || "현재 AI 계정의 자동 선택 모델",
               "desk-agent-model",
             );
-            model.title = agent.modelId || "공급자 기본 모델";
+            model.title = agent.modelId || "현재 AI 계정의 자동 선택 모델";
             identity.append(model);
             const switched = agent.usingFallback;
             if (switched)

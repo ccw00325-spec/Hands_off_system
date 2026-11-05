@@ -21,6 +21,7 @@ export function displayedTeam(run, configured = [], conversation = null) {
   const team = useRun ? run.options.team : configured;
   if (!team.length) return [];
   const options = { ...(useRun ? run.options : {}), team };
+  if(conversation?.routing?.autoFallback===true)options.autoFallback=true;
   if (conversation?.routing?.teamKey === JSON.stringify(validateTeam(team)))
     options.runtimeRoutes = {
       ...options.runtimeRoutes,

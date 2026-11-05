@@ -97,11 +97,12 @@ test("2..4 panels allow one GPT login, duplicate capabilities and multi-role age
     defaultTeam({ gpt: "gpt", grok: "gpt", claude: "gpt" }),
     2,
   );
-  assert.deepEqual(two[1].roles, ["feature", "ui"]);
+  assert.deepEqual(two[1].roles, ["feature", "debug", "review", "ui"]);
+  assert.ok(two[0].roles.includes("test"));
   assert.ok(two.every((agent) => agent.provider === "gpt"));
   const four = resizeTeam(two, 4);
   assert.equal(four.length, 4);
-  assert.ok(four[1].roles.includes("ui") && four[2].roles.includes("ui"));
+  assert.ok(four[1].roles.includes("ui") && !four[2].roles.includes("ui"));
   assert.deepEqual(four[3].roles, ["debug", "review"]);
   assert.throws(() => validateTeam(two.slice(0, 1)));
   assert.throws(() =>
@@ -129,7 +130,7 @@ test("old projects migrate to a default three-panel team; two-panel multi-role c
   );
 });
 test("Fun compiler rejects missing CTR, unimplemented requirements and wrong role ownership; emits Gherkin and review list", () => {
-  const team = resizeTeam(defaultTeam(), 2),
+  const team = resizeTeam(defaultTeam(), 2).map(row=>({...row,roles:row.roles.filter(role=>role!=="test")})),
     plan = contract(team);
   const compiled = compileFunPlan(plan, { team });
   assert.match(compiled.spec, /Given Idle app/);
@@ -157,7 +158,7 @@ for (const count of [2, 3, 4])
     const team = resizeTeam(
       defaultTeam({ gpt: "gpt", grok: "gpt", claude: "gpt" }),
       count,
-    );
+    ).map(row=>({...row,roles:row.roles.filter(role=>role!=="test")}));
     let active = 0,
       maxActive = 0,
       reviews = 0;

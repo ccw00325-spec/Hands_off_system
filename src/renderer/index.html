@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="workbench-v07.css" />
     <link rel="stylesheet" href="mission.css" />
     <link rel="stylesheet" href="agent-desk.css" />
+    <link rel="stylesheet" href="role-settings.css" />
   </head>
   <body data-mission-mode="focus" data-mission-panel="gpt" data-agent-desk="true">
     <dialog id="startup-dialog" aria-labelledby="startup-title">
@@ -280,7 +281,7 @@
               <div class="mutation-option-row">
                 <span class="log-label">검증 옵션</span>
                 <label class="check-label">
-                  <input id="mutation-option" type="checkbox" aria-describedby="mutation-option-hint" /> 뮤테이션 테스트
+                  <input id="mutation-option" type="checkbox" checked aria-describedby="mutation-option-hint" /> 뮤테이션 테스트
                 </label>
                 <span id="mutation-option-hint" class="hint">기본 테스트 통과 후 실행 · 프로젝트에 test:mutation 필요</span>
               </div>
@@ -451,7 +452,7 @@
                 </div>
               </form>
               <div class="worker-footer">
-                <span id="claude-model-label">공급자 기본 모델</span
+                <span id="claude-model-label">현재 AI 계정의 자동 선택 모델</span
                 ><button class="text-button change-role" data-role="claude">
                   모델 변경 ▾
                 </button>
@@ -524,7 +525,7 @@
                 </div>
               </form>
               <div class="worker-footer">
-                <span id="reviewer-model-label">공급자 기본 모델</span
+                <span id="reviewer-model-label">현재 AI 계정의 자동 선택 모델</span
                 ><button class="text-button change-role" data-role="reviewer">
                   모델 변경 ▾
                 </button>
@@ -755,7 +756,7 @@
         </section>
         <section class="connection-card">
           <div class="connection-title">
-            <span class="agent-icon mint">G</span>
+            <span class="agent-icon"><img class="provider-logo provider-logo-gpt" src="assets/provider-gpt.svg" alt="GPT" width="28" height="28" /></span>
             <div>
               <h3>ChatGPT</h3>
               <p>공식 브라우저 로그인 · 사용 권한 승인</p>
@@ -788,7 +789,7 @@
         </section>
         <section class="connection-card codex-card">
           <div class="connection-title">
-            <span class="agent-icon mint">G</span>
+            <span class="agent-icon"><img class="provider-logo provider-logo-gpt" src="assets/provider-gpt.svg" alt="GPT" width="28" height="28" /></span>
             <div>
               <h3>GPT · Codex 로그인</h3>
               <p>이 PC의 터미널 인증 재사용 · 한 로그인으로 여러 세션</p>
@@ -1177,16 +1178,17 @@
         </p>
         <label class="agent-count-label" for="agent-count"
           >작업 패널 수<select id="agent-count">
-            <option value="2">2개 · 컨트롤 + 통합 작업</option>
-            <option value="3" selected="">3개 · 컨트롤 + 2개 작업</option>
-            <option value="4">4개 · 컨트롤 + 3개 작업</option>
+            <option value="2">2개 AI</option>
+            <option value="3" selected="">3개 AI</option>
+            <option value="4">4개 AI</option>
           </select></label
         >
         <div id="team-editor"></div>
         <p id="roles-help" class="hint">
-          로그인은 공급자별 한 번이면 됩니다. 같은 GPT를 모든 패널에 배정할 수
-          있습니다. 각 패널은 여러 역할을 맡고, 같은 역할을 여러 패널이 맡을
-          수도 있습니다. 컨트롤 타워는 첫 패널입니다.
+          컨트롤 타워는 01번에 고정됩니다. 기능 구현과 UI 구현·연결은 각각 한
+          패널만 담당합니다. 담당을 옮기려면 기존 체크를 해제한 뒤 다른 패널에서
+          선택하세요. 디버깅·코드 검토·테스트는 여러 패널에 함께 맡길 수 있습니다.
+          한도가 부족하면 연결된 팀 안에서 인계하며, Cursor가 UI를 구현할 때는 먼저 확인합니다.
         </p>
         <div class="action-row">
           <button type="submit" id="save-roles" class="primary">
@@ -1367,34 +1369,8 @@
           ×
         </button>
       </header>
-      <ol class="guide-steps">
-        <li>
-          <strong>작업 공간 준비</strong>
-          <p>
-            새 프로젝트에서 작업 폴더를 고르고, 계정 · 연결에서 사용할 AI를
-            연결하세요.
-          </p>
-        </li>
-        <li>
-          <strong>컨트롤 타워에 요청</strong>
-          <p>
-            AI 역할 변경에서 구현·UI·테스트 담당을 정하세요. 컨트롤 타워가
-            요청을 명세로 정리하고 담당자에게 넘깁니다.
-          </p>
-        </li>
-        <li>
-          <strong>진행과 결과 확인</strong>
-          <p>
-            각 AI의 로그와 오른쪽 실행 현황에서 작업을 따라가세요. 테스트 역할을
-            배정하면 실행 결과와 재현 절차도 확인할 수 있습니다. 코드 실행은
-            설정에서 동의한 뒤 진행됩니다.
-          </p>
-        </li>
-      </ol>
-      <p class="guide-note">
-        폴더별 대화가 저장되어 프로젝트를 바꿔도 이전 작업을 이어서 볼 수
-        있습니다.
-      </p>
+      <nav id="guide-nav" aria-label="기능별 가이드"></nav>
+      <section id="guide-content" aria-live="polite"></section>
     </dialog>
 
     <dialog id="settings-dialog" aria-labelledby="settings-title">

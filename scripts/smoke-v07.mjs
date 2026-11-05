@@ -20,6 +20,12 @@ let application, debugPage;
 const errors = [];
 async function boot() {
   application = await electron.launch({ args: ["."], cwd: resolve("."), env });
+  await application.evaluate((_electron,url)=>{
+    const p=process.getBuiltinModule('url').fileURLToPath(url),require=process.getBuiltinModule('module').createRequire(p);
+    require(p).CodexConnection.prototype.models=async()=>[{id:'fixture-native-model',name:'Fixture model'}];
+    require(p.replace('codex.js','cursor.js')).CursorConnection.prototype.models=async()=>[{id:'fixture-grok',name:'Cursor fixture model'}];
+    require(p.replace('codex.js','gemini.js')).GeminiConnection.prototype.models=async()=>[{id:'fixture-gemini',name:'Gemini fixture model'}];
+  },pathToFileURL(resolve('src/core/codex.js')).href);
   const page = await application.firstWindow();
   debugPage = page;
   const storage=await application.evaluate(({app})=>({userData:app.getPath("userData"),sessionData:app.getPath("sessionData")}));
@@ -94,6 +100,26 @@ try {
   await page.locator("#open-roles").click();
   const panel = page.locator(".roles-dialog-panel");
   await panel.waitFor();
+  const roleBounds=await panel.boundingBox(),closeBounds=await page.locator('#close-roles-outside').boundingBox();
+  assert.ok(closeBounds.x>=roleBounds.x+roleBounds.width,'The outside close must remain outside the wider role panel');
+  assert.equal(await page.locator('#team-editor input[value=control]').count(),0);
+  assert.equal(await page.locator('#mutation-option').isChecked(),true);
+  assert.equal(await page.locator('#team-editor button').count(),0);
+  assert.equal(await page.locator('#team-editor [data-agent=gpt] input[value=test]').isChecked(),true);
+  assert.equal(await page.locator('#team-editor [data-agent=grok] input[value=debug]').isChecked(),true);
+  assert.equal(await page.locator('#team-editor [data-agent=claude] input[value=review]').isChecked(),true);
+  assert.equal(await page.locator('#team-editor [data-agent=gpt] input[value=feature]').isDisabled(),true);
+  await page.locator('#role-gpt').selectOption('gemini');
+  await page.locator('#panel-model-gpt option[value=fixture-gemini]').waitFor({state:'attached'});
+  assert.match(await page.locator('label[for=panel-model-gpt]').innerText(),/Gemini 모델 선택/);
+  await page.locator('#role-gpt').selectOption('gpt');
+  await page.locator('#panel-model-gpt option[value=fixture-native-model]').waitFor({state:'attached'});
+  await page.locator('#team-editor [data-agent=grok] input[value=feature]').uncheck();
+  await page.locator('#team-editor [data-agent=gpt] input[value=feature]').check();
+  assert.equal(await page.locator('#team-editor [data-agent=grok] input[value=feature]').isDisabled(),true);
+  await page.locator('#team-editor [data-agent=gpt] input[value=feature]').uncheck();
+  await page.locator('#team-editor [data-agent=grok] input[value=feature]').check();
+  checks.push('Role settings load models automatically on open and provider change, use provider-specific labels, hide fixed control check, and enforce one implementation owner');
   assert.ok(await panel.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
     return element.scrollTop;
@@ -105,7 +131,14 @@ try {
   checks.push("First-run tour advances and skips; the outside role close stays clickable after scrolling");
   await page.locator("#open-guide").click();
   await page.locator("#guide-dialog[open]").waitFor();
-  assert.equal(await page.locator("#guide-dialog li").count(), 3);
+  assert.equal(await page.locator("#guide-nav button").count(), 8);
+  for(const button of await page.locator('#guide-nav button').all()){
+    await button.click();await page.locator('#guide-content img').evaluate(image=>image.decode());
+    assert.ok((await page.locator('#guide-content dd').count())>=3);
+  }
+  await page.locator('[data-guide=team]').click();
+  await page.screenshot({path:join(artifacts,'guide-role-settings.png')});
+  checks.push('Illustrated guide covers eight topics with readable definitions, real app screenshots, mutation prerequisites and actual feature shortcuts');
   await page.keyboard.press("Escape");
   await page.locator("#guide-dialog").waitFor({ state: "hidden" });
   await page.locator("#open-guide").click();

@@ -175,11 +175,11 @@ export class Conversations {
   }
   async setRouting(projectId, id, options, usage) {
     const team = validateTeam(options.team);
-    teamFor({ team, runtimeRoutes: options.runtimeRoutes });
+    teamFor({ team, runtimeRoutes: options.runtimeRoutes, autoFallback: options.autoFallback });
     return this.mutate(async () => {
       const data = await this.read(projectId, id);
       data.routing = { teamKey: JSON.stringify(team), team,
-        runtimeRoutes: structuredClone(options.runtimeRoutes ?? {}),
+        runtimeRoutes: structuredClone(options.runtimeRoutes ?? {}), autoFallback: options.autoFallback===true,
         ...(usage ? { usage: structuredClone(usage) } : {}) };
       await this.store.write(`conversation-${id}`, data);
       return data.routing;

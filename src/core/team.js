@@ -27,12 +27,12 @@ export function defaultTeam(
   roles = { gpt: "gpt", grok: "grok", claude: "claude" },
 ) {
   return [
-    { id: "gpt", provider: roles.gpt, roles: ["control", "debug"] },
-    { id: "grok", provider: roles.grok, roles: ["feature"] },
-    { id: "claude", provider: roles.claude, roles: ["ui"] },
+    { id: "gpt", provider: roles.gpt, roles: ["control", "debug", "review", "test"] },
+    { id: "grok", provider: roles.grok, roles: ["feature", "debug", "review"] },
+    { id: "claude", provider: roles.claude, roles: ["ui", "review"] },
   ];
 }
-export function validateTeam(team) {
+export function validateTeam(team, { exclusive = false } = {}) {
   if (!Array.isArray(team) || team.length < 2 || team.length > 4)
     throw new Error("작업 패널은 2~4개로 구성하세요.");
   const normalized = team.map((agent, index) => {
@@ -78,15 +78,28 @@ export function validateTeam(team) {
     throw new Error(
       "기능 구현과 UI 구현 역할을 각각 한 패널 이상에 배정하세요. 한 패널에 함께 배정할 수 있습니다.",
     );
+  if(exclusive && ["feature","ui"].some(role=>normalized.filter(agent=>agent.roles.includes(role)).length!==1))
+    throw new Error("기능 구현과 UI 구현·연결은 각각 한 AI 패널에만 배정하세요.");
   return normalized;
+}
+// Old run snapshots remain readable; new settings migrate to single implementation owners.
+export function exclusiveTeam(team) {
+  const normalized=validateTeam(team);const owned=new Set();
+  return normalized.map(agent=>{
+    const roles=agent.roles.filter(role=>{
+      if(!["feature","ui"].includes(role))return true;
+      if(owned.has(role))return false;owned.add(role);return true;
+    });
+    return {...agent,roles:roles.length?roles:["review"]};
+  });
 }
 export function teamFor(options = {}) {
   const team = validateTeam(options.team ?? defaultTeam(options.roles));
   return team.map((agent) => {
     const route = options.runtimeRoutes?.[agent.id];
     if (!route) return agent;
-    if (!agent.fallback || route.provider !== agent.fallback.provider ||
-        (route.modelId || "") !== (agent.fallback.modelId || ""))
+    const same=next=>next?.provider===route.provider&&(next.modelId||"")===(route.modelId||"");
+    if (!same(agent.fallback) && !(options.autoFallback===true && team.some(same)))
       throw new Error("저장된 대체 AI 경로와 역할 설정이 일치하지 않습니다.");
     const { modelId: _old, ...rest } = agent;
     return { ...rest, provider: route.provider, ...(route.modelId ? { modelId: route.modelId } : {}) };
@@ -103,13 +116,13 @@ export function resizeTeam(team, count) {
     result.push({
       id: SLOT_IDS[index],
       provider: result[0].provider,
-      roles: index === 2 ? ["ui"] : ["debug", "review"],
+      roles: index === 2 && !result.some(agent=>agent.roles.includes("ui")) ? ["ui", "review"] : ["debug", "review"],
     });
   }
   for (const role of ["feature", "ui"])
     if (!result.some((agent) => agent.roles.includes(role)))
       result[1].roles.push(role);
-  return validateTeam(result);
+  return validateTeam(exclusiveTeam(result),{exclusive:true});
 }
 export function agentLabel(agent) {
   return `${PROVIDERS[agent.provider]} · ${agent.roles.map((role) => CAPABILITIES[role]).join(" / ")}`;

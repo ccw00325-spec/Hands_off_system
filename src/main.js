@@ -167,6 +167,7 @@ async function executionOptions(id) {
     apiOutputRate: settings.apiOutputRate,
     apiRateModel: settings.apiRateModel,
     crossReview: true,
+    autoFallback: true,
     designApproval: settings.designApproval,
     validationScript: settings.validationScript,
     allowExecution: settings.allowExecution && project.workspace?.executionApproved === true,
@@ -368,6 +369,17 @@ else {
           grok,
           claude: new ClaudeProvider(claude),
           gemini: new GeminiProvider(gemini),
+        },{
+          getUsage:()=>usage.snapshot(),
+          confirmCursorUI:async ({signal,title})=>{
+            signal?.throwIfAborted();
+            if(!window||window.isDestroyed())return false;
+            const result=await dialog.showMessageBox(window,{type:'warning',title:'Cursor UI 구현 확인',
+              message:'Cursor에게 UI 구현·연결을 맡기는 것은 현재 권장 설정에서 추천하지 않습니다. 진행하시겠습니까?',
+              detail:`작업: ${title??'UI 구현·연결'}\n승인한 시안을 화면으로 구현하는 역할입니다. GPT 또는 Claude로 변경할 수 있습니다. 취소하면 저장된 작업을 보존하고 멈춥니다.`,
+              buttons:['취소','이번 작업에서 진행'],defaultId:0,cancelId:0,noLink:true});
+            return result.response===1&&!signal?.aborted;
+          },
         }),
         (event) => {
           notify(event);

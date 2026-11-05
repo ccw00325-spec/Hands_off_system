@@ -1,0 +1,160 @@
+/* Hallmark component: role settings and illustrated guide. P5 H5 E4 S5 R5 V4. */
+#roles-dialog {
+  width: min(924px, calc(100vw - 24px));
+}
+.roles-dialog-panel {
+  width: 100%;
+}
+.role-settings .team-member {
+  padding: 20px;
+  margin-top: 20px;
+  background: var(--surface);
+}
+.role-ai-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 20px;
+}
+.role-ai-fields select {
+  width: 100%;
+  margin-top: 8px;
+}
+.role-ai-fields label {
+  font-weight: 600;
+}
+.role-provider-field {
+  position: relative;
+}
+.role-provider-mark {
+  position: absolute;
+  top: 0;
+  right: 2px;
+}
+.role-section-title {
+  font-weight: 600;
+  margin: 18px 0 10px;
+}
+.role-settings .role-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.role-settings .role-checks label {
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.role-settings .role-checks label:has(input:checked) {
+  border-color: var(--mint);
+}
+.role-settings .role-checks label:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.role-settings .fallback-setting {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.fallback-setting summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.fallback-setting[open] summary {
+  margin-bottom: 12px;
+  color: var(--text);
+}
+.fallback-setting select {
+  width: 100%;
+  margin: 8px 0;
+}
+.model-status {
+  min-height: 36px;
+}
+#guide-dialog {
+  width: min(1050px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+}
+#guide-dialog .dialog-heading {
+  padding: 20px 24px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 2;
+  border-bottom: 1px solid var(--border);
+}
+#guide-dialog #replay-tour {
+  margin: 18px 24px 0;
+}
+#guide-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 20px 24px 0;
+}
+#guide-nav button {
+  white-space: nowrap;
+  font-size: 12px;
+}
+#guide-nav [aria-current="page"] {
+  border-color: var(--mint);
+  background: var(--mint-bg);
+  color: var(--mint);
+}
+#guide-content {
+  padding: 8px 24px 28px;
+  line-height: 1.8;
+  font-family: var(--font-sans);
+}
+#guide-content h3 {
+  font-size: 22px;
+  line-height: 1.4;
+}
+#guide-content p {
+  color: var(--muted);
+}
+#guide-content figure {
+  margin: 20px 0;
+}
+#guide-content img {
+  width: 100%;
+  max-height: 450px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+#guide-content figcaption {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+#guide-content dt {
+  font-weight: 700;
+  color: var(--mint);
+  margin-top: 16px;
+}
+#guide-content dd {
+  margin: 4px 0 16px;
+}
+@media (max-width: 767px) {
+  .role-ai-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .role-settings .role-checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .role-settings .team-member {
+    padding: 12px;
+  }
+  #guide-content,
+  #guide-nav {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
