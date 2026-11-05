@@ -8,6 +8,7 @@ import { objectJSON } from "./workflow.js";
 import { terminateTree } from "./processes.js";
 import { nativeEnvironment } from "./child-env.js";
 import { validateModelId } from "./team.js";
+import { providerFailure } from "./provider-errors.js";
 
 export async function findCodex() {
   const discovered = await findExecutable("codex");
@@ -314,7 +315,7 @@ export class CodexConnection {
         let text = "",
           completed = false,
           settled = false,
-          failure = "";
+          failure = null;
         const finish = (error, value) => {
           if (settled) return;
           settled = true;
@@ -351,7 +352,7 @@ export class CodexConnection {
               options.onUsage?.(event.usage?.input_tokens, event.usage?.output_tokens);
             }
             if (["turn.failed", "error"].includes(event.type))
-              failure = codexFailure(event);
+              failure = providerFailure("gpt", event.error ?? event, codexFailure(event));
           } catch {}
         });
         child.stderr.on("data", () => {});
@@ -362,7 +363,7 @@ export class CodexConnection {
         child.once("close", (code) => {
           if (code !== 0 || !completed || failure)
             return finish(
-              new Error(failure || "Codex 작업이 완료되지 않았습니다."),
+              failure || new Error("Codex 작업이 완료되지 않았습니다."),
             );
           try {
             finish(null, objectJSON(text));

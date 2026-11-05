@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, realpath, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
+import { checkDesktopFallback } from "./desktop-fallback.mjs";
 const artifacts = resolve("artifacts");
 const releaseVersion = JSON.parse(
   await readFile("package.json", "utf8"),
@@ -10,21 +11,47 @@ const releaseVersion = JSON.parse(
 await mkdir(artifacts, { recursive: true });
 const profile = join(artifacts, "smoke-v07-profile-" + Date.now()),
   root = join(artifacts, "smoke-v07-workspace-" + Date.now());
+const fallbackRoot=join(artifacts,"smoke-fallback-workspace-"+Date.now());
 await mkdir(root);
 const env = { ...process.env, TOWER_TEST_USER_DATA: profile };
 delete env.ELECTRON_RUN_AS_NODE;
 const checks = [];
-let application;
+let application, debugPage;
 const errors = [];
 async function boot() {
   application = await electron.launch({ args: ["."], cwd: resolve("."), env });
   const page = await application.firstWindow();
+  debugPage = page;
+  const storage=await application.evaluate(({app})=>({userData:app.getPath("userData"),sessionData:app.getPath("sessionData")}));
+  assert.equal(storage.userData,profile);assert.equal(storage.sessionData,profile);
   page.setDefaultTimeout(30000);
   page.on("pageerror", (error) => errors.push(error.message));
   await page
     .locator("#session-status[data-restoring=false]")
     .waitFor({ state: "attached", timeout: 90000 });
   return page;
+}
+async function closeAgent(page) {
+  if(await page.locator("#agent-session-dialog").evaluate(el=>el.open)) {
+    await page.locator("#close-agent-session").click();
+    await page.locator("#agent-session-dialog").waitFor({state:"hidden"});
+  }
+}
+async function closeWorkflow(page) {
+  if(await page.locator("#workflow-dialog").evaluate(el=>el.open)) {
+    await page.locator("#close-workflow-dialog").click();
+    await page.locator("#workflow-dialog").waitFor({state:"hidden"});
+  }
+}
+async function openWorkflow(page) {
+  await closeAgent(page);
+  if(!(await page.locator("#workflow-dialog").evaluate(el=>el.open)))await page.locator("#desk-workflow-open").click();
+  await page.locator("#workflow-dialog[open]").waitFor();
+}
+async function openAgent(page,actor) {
+  await closeAgent(page);await closeWorkflow(page);
+  await page.locator(`[data-desk-agent="${actor}"]`).click();
+  await page.locator("#agent-session-dialog[open]").waitFor();
 }
 try {
   let page = await boot();
@@ -33,6 +60,7 @@ try {
     "LOCAL / " + releaseVersion,
   );
   const tour = page.locator("#first-run-tour");
+  await page.locator("#first-run-tour[open]").waitFor();
   await tour.waitFor();
   await page.locator("#tour-next").click();
   assert.match(await page.locator("#tour-title").innerText(), /AI 역할 변경/);
@@ -259,29 +287,19 @@ try {
   assert.equal(await page.locator("main>.folderbar").count(), 0);
   assert.equal(await page.locator(".planner .run-controls").count(), 0);
   assert.equal(await page.locator(".project-sidebar>h2").count(), 0);
-  await page.locator("#mission-view-all").click();
-  const panelOrder = await page.evaluate(() => ({
-    worker: document.querySelector(".workers").getBoundingClientRect().top,
-    controller: document.querySelector(".planner").getBoundingClientRect().top,
-    workerHeight: document.querySelector(".worker").getBoundingClientRect()
-      .height,
-    controllerHeight: document.querySelector(".planner").getBoundingClientRect()
-      .height,
+  const layout = await page.evaluate(() => ({
+    controller:document.querySelector(".desk-chat").getBoundingClientRect().toJSON(),
+    agents:[...document.querySelectorAll(".desk-agent-card")].map(el=>el.getBoundingClientRect().toJSON()),
+    logos:[...document.querySelectorAll("[data-desk-agent]")].map(el=>el.getBoundingClientRect().width),
   }));
-  assert.ok(panelOrder.controller < panelOrder.worker);
-  assert.equal(
-    await page.evaluate(() =>
-      document
-        .querySelector(".planner")
-        .nextElementSibling.classList.contains("dispatch"),
-    ),
-    true,
-  );
-  assert.ok(panelOrder.controllerHeight > panelOrder.workerHeight);
+  assert.equal(layout.agents.length,3);
+  assert.ok(layout.agents[0].x>layout.controller.right);
+  assert.ok(layout.agents[1].y>=layout.agents[0].bottom);
+  assert.ok(layout.logos.every(width=>width>=54));
+  assert.equal(await page.locator("#workflow-dialog").evaluate(el=>el.open),false);
   checks.push(
-    "Control tower is first and largest, then downward dispatch and workers; central execution fields remain in settings",
+    "Approved chat-first desk places readable provider buttons vertically beside the controller; Workflow is closed by default",
   );
-  await page.locator("#mission-view-focus").click();
   await application.evaluate(
     (_electron, url) => {
       const p = process.getBuiltinModule("url").fileURLToPath(url),
@@ -543,13 +561,13 @@ try {
   await page.locator("#design-approval-status").filter({ hasText: "이대로 적용" }).waitFor();
   assert.equal(await page.locator('[data-node="design"]').getAttribute("data-state"), "waiting");
   assert.equal(await page.locator('[data-node="complete"]').getAttribute("data-state"), "idle");
-  assert.equal(await page.locator("[data-task]").count(), 3);
+  assert.equal(await page.locator("#mission-graph [data-task]").count(), 3);
   await page.locator("#mission-primary").filter({ hasText: "UI 시안 열기" }).waitFor();
   await page.locator("#design-delivery").filter({ hasText: "UI를 확인해보세요!" }).waitFor();
   await page.waitForFunction(() => window.__deliveries.some((entry) => entry.from === "gpt" && entry.to === "design"));
   await page.screenshot({ path: join(artifacts, "design-delivery.png") });
   assert.equal((await page.evaluate((id) => window.tower.workflow(id), projectId)).value.tasks.every((task) => task.status === "pending"), true);
-  await page.locator('[data-node="design"]').click();
+  await page.locator("#mission-primary").click();
   await page.locator("#generated-image").waitFor();
   const draft = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
   await page.locator("#back-to-controller").click();
@@ -590,21 +608,24 @@ try {
     .value;
   assert.equal(run.round, 1);
   assert.equal(run.validation.passed, true);
+  await openWorkflow(page);
   await page.locator('[data-node="complete"][data-state="done"]').waitFor();
-  await page.locator('[data-task="logic"]').click();
+  await page.locator('#mission-graph [data-task="logic"]').click();
   assert.equal(await page.locator('body').getAttribute("data-mission-panel"), "grok");
-  await page.locator("#mission-task").filter({ hasText: "counter.cjs" }).waitFor();
-  assert.equal(await page.locator(".planner").isVisible(), false);
+  await page.locator("#desk-popup-task").filter({ hasText: "counter.cjs" }).waitFor();
+  assert.equal(await page.locator(".planner").isVisible(), true);
   assert.equal(await page.locator('[data-agent-panel="grok"]').isVisible(), true);
-  await page.locator("#mission-tabs [data-actor=gpt]").click();
-  await page.locator("#mission-expand").click();
-  assert.equal(await page.locator("#mission-graph").isVisible(), false);
-  await page.locator("#mission-expand").click();
-  await page.locator("#mission-graph").waitFor();
+  await openAgent(page,"gpt");
+  assert.equal(await page.locator("#agent-session-content .planner").count(),1);
+  await page.locator("#planner-input").fill("A draft stays in the same controller session");
+  await closeAgent(page);
+  assert.equal(await page.locator("#planner-input").inputValue(),"A draft stays in the same controller session");
+  await page.locator("#planner-input").fill("");
   await page.locator("#mission-primary").click();
   await page.locator("#test-report-dialog[open]").waitFor();
   await page.locator("#close-test-report").click();
-  checks.push("Mission graph follows real run states; task nodes select the original AI output and completion opens actual validation");
+  checks.push("Workflow task nodes open the owning AI with changed files; controller popup shares the same history and draft; completion opens actual validation");
+  await openWorkflow(page);
   assert.equal(run.mutation.counts.Killed, 1);
   assert.match(await page.locator("#mutation-summary").innerText(), /1개 탐지/);
   checks.push("Standalone mutation option runs only after green baseline and renders its result in the inspector");
@@ -662,13 +683,14 @@ try {
   const firstConversation = await page
     .locator(".conversation-row.selected")
     .getAttribute("data-conversation");
-  await page.locator("#mission-view-all").click();
+  await openAgent(page,"grok");
   await page.locator("#grok-input").fill("Explain this counter");
   await page.locator("#grok-input").press("Enter");
   await page
     .locator("#grok-events")
     .filter({ hasText: "Fixture answer for grok" })
     .waitFor();
+  await openAgent(page,"claude");
   await page.locator("#claude-input").fill("Explain the screen");
   await page.locator("#claude-input").press("Enter");
   await page
@@ -684,6 +706,7 @@ try {
   checks.push(
     "Each worker has a real provider-backed question path with separate scoped history",
   );
+  await closeAgent(page);
   await page.locator("#controller-mode").selectOption("question");
   await page.locator("#planner-input").fill("Wait for cancellation");
   await page.locator("#planner-input").press("Enter");
@@ -766,10 +789,12 @@ try {
     .locator("#conversation-title")
     .filter({ hasText: "Fixture timer with QA" })
     .waitFor();
+  await openAgent(page,"grok");
   await page
     .locator("#grok-events")
     .filter({ hasText: "Explain this counter" })
     .waitFor();
+  await closeAgent(page);
   checks.push(
     "New conversation is empty; selecting folder conversation restores messages and its own run/test result",
   );
@@ -778,9 +803,6 @@ try {
   await page.locator("#sidebar-file-search").fill("");
   await page.locator(".conversation-row.selected").waitFor();
   checks.push("Left sidebar searches conversations rather than files");
-  await page.locator("#mission-view-focus").click();
-  await page.locator("#mission-tabs [data-actor=gpt]").click();
-  await page.locator("#mission-view-all").click();
   await page.locator("#open-settings").click();
   await page.locator("#max-repair-rounds").fill("4");
   await page.locator("#save-settings").click();
@@ -804,12 +826,12 @@ try {
     await page.locator("#role-" + id).selectOption("gpt");
   await page.locator("#save-roles").click();
   await page.locator("#roles-dialog").waitFor({ state: "hidden" });
-  assert.equal(await page.locator(".worker:visible").count(), 1);
+  assert.equal(await page.locator(".desk-agent-card").count(), 2);
   await page.locator("#open-roles").click();
   await page.locator("#agent-count").selectOption("4");
   await page.locator("#save-roles").click();
   await page.locator("#roles-dialog").waitFor({ state: "hidden" });
-  assert.equal(await page.locator(".worker:visible").count(), 3);
+  assert.equal(await page.locator(".desk-agent-card").count(), 4);
   checks.push(
     "2/4 panel resizing retains multiple roles and independent chat composers",
   );
@@ -817,10 +839,11 @@ try {
   await page.screenshot({
     path: join(artifacts, "workbench-controller-top.png"),
   });
-  await page.locator(".workers").scrollIntoViewIfNeeded();
+  await openAgent(page,"grok");
   await page.screenshot({
     path: join(artifacts, "workbench-workers-below.png"),
   });
+  await closeAgent(page);
   await page.locator(".planner").scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(artifacts, "v07-controller.png") });
   for (const width of [1920, 1440, 900, 768, 414, 375, 320]) {
@@ -834,7 +857,7 @@ try {
       scroll: document.documentElement.scrollWidth,
     }));
     assert.ok(sizes.scroll <= sizes.width, "overflow at " + width);
-    await page.locator("#mission-view-focus").click();
+    await openWorkflow(page);
     await page.locator("#mission-graph").waitFor();
     assert.ok(await page.locator("#mission-edges path").count() > 0);
     const flow = await page.evaluate(() => ({
@@ -842,15 +865,20 @@ try {
       scroll: document.documentElement.scrollWidth,
     }));
     assert.ok(flow.scroll <= flow.width, "mission flow overflow at " + width);
-    await page.locator("#mission-view-all").click();
+    await closeWorkflow(page);
   }
   checks.push(
     "No horizontal overflow across 320,375,414,768,900,1440,1920px; large panels scroll vertically",
   );
+  await application.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows()[0].setSize(1600,1100);});
+  await checkDesktopFallback({application,page,artifacts,root:fallbackRoot,projectId,checks,openAgent,closeAgent});
   assert.deepEqual(errors, []);
   await application.close();
   page = await boot();
-  await page.locator("#mission-view-all").click();
+  await page.locator("#notification-bell").click();
+  await page.locator("#notification-items").filter({hasText:"Persistent desktop notification fixture"}).waitFor();
+  await page.locator("#close-notifications").click();
+  checks.push("Notification history persists in the isolated OS-user app profile across a full restart");
   assert.equal(
     await page.locator("#settings-dialog").evaluate((node) => node.open),
     false,
@@ -861,14 +889,16 @@ try {
       .maxRepairRounds,
     4,
   );
+  await openAgent(page,"grok");
   await page
     .locator("#grok-events")
     .filter({ hasText: "Fixture answer for grok" })
     .waitFor();
-  assert.equal(await page.locator(".worker:visible").count(), 3);
+  assert.equal(await page.locator(".desk-agent-card").count(), 4);
   checks.push(
     "Full restart restores project, selected conversation, worker replies, role count and preferences without repeated consent",
   );
+  await openWorkflow(page);
   await page.locator("#restore-verified").click();
   await page.locator("#checkpoint-preview").filter({ hasText: "되돌릴 변경이 없습니다" }).waitFor();
   assert.equal(await page.locator("#confirm-checkpoint").isDisabled(), true);
@@ -881,10 +911,10 @@ try {
   const afterRollback = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
   assert.equal(afterRollback.status, "awaiting_validation");
   assert.equal(afterRollback.validation.stale, true);
-  await page.locator("#mission-view-focus").click();
   assert.equal(await page.locator('[data-node="complete"]').getAttribute("data-state"), "idle");
   assert.equal(await page.locator('[data-node="testing"]').getAttribute("data-state"), "error");
   checks.push("Stable checkpoint card opens a safe preview and actual UI rollback invalidates prior verification");
+  await closeWorkflow(page);
   const disposable = await page.evaluate((id) => window.tower.createConversation(id), projectId);
   await page.locator("#open-history").click();
   await page.locator("#history-select").selectOption(disposable.value.id);
@@ -919,10 +949,15 @@ try {
     join(artifacts, "smoke-v07-report.json"),
     JSON.stringify({ passed: checks.length, checks, errors }, null, 2),
   );
+} catch (error) {
+  await debugPage?.screenshot({path:join(artifacts,"desktop-failure.png"),fullPage:true}).catch(()=>{});
+  console.error(JSON.stringify({pageErrors:errors}));
+  throw error;
 } finally {
   await application?.close().catch(() => {});
   if (await realpath(root) === root && root.startsWith(join(artifacts, "smoke-v07-workspace-")))
     await rm(root, { recursive: true });
   if (await realpath(profile).catch(() => null) === profile && profile.startsWith(join(artifacts, "smoke-v07-profile-")))
     await rm(profile, { recursive: true });
+  if (await realpath(fallbackRoot).catch(()=>null)===fallbackRoot&&fallbackRoot.startsWith(join(artifacts,"smoke-fallback-workspace-")))await rm(fallbackRoot,{recursive:true});
 }

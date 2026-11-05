@@ -1,6 +1,6 @@
 import { redact } from "./secrets.js";
 import { randomUUID } from "node:crypto";
-import { SLOT_IDS, PROVIDERS } from "./team.js";
+import { SLOT_IDS, PROVIDERS, validateTeam, teamFor } from "./team.js";
 const validId = (id) => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id);
 export class Conversations {
   constructor(store, projects) {
@@ -171,6 +171,18 @@ export class Conversations {
       await this.store.write(`conversation-${id}`, data);
       await this.store.write("conversation-index", index);
       return message;
+    });
+  }
+  async setRouting(projectId, id, options, usage) {
+    const team = validateTeam(options.team);
+    teamFor({ team, runtimeRoutes: options.runtimeRoutes });
+    return this.mutate(async () => {
+      const data = await this.read(projectId, id);
+      data.routing = { teamKey: JSON.stringify(team), team,
+        runtimeRoutes: structuredClone(options.runtimeRoutes ?? {}),
+        ...(usage ? { usage: structuredClone(usage) } : {}) };
+      await this.store.write(`conversation-${id}`, data);
+      return data.routing;
     });
   }
 }

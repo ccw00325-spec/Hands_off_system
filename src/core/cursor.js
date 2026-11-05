@@ -5,6 +5,7 @@ import { LoginFlow } from "./login-flow.js";
 import { RpcProcess } from "./rpc-process.js";
 import { objectJSON } from "./workflow.js";
 import { nativeEnvironment } from "./child-env.js";
+import { providerFailure } from "./provider-errors.js";
 
 export async function findCursorLaunch() {
   if (process.platform !== "win32" || !process.env.LOCALAPPDATA) return null;
@@ -333,6 +334,8 @@ export class CursorConnection {
       if (result.stopReason !== "end_turn")
         throw new Error("Cursor의 Grok 작업이 정상 완료되지 않았습니다.");
       return objectJSON(text);
+    } catch (error) {
+      throw providerFailure("grok", error, error.message);
     } finally {
       signal.removeEventListener("abort", abort);
       await rpc.close();

@@ -70,6 +70,7 @@ export class RpcProcess {
               0,
               500,
             );
+            error.rpcData = message.error.data;
             request.reject(error);
           } else request.resolve(message.result);
         }

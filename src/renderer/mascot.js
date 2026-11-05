@@ -11,8 +11,7 @@ export function mascotState(
   assignments = { gpt: "gpt", grok: "grok", claude: "claude" },
 ) {
   const roles = run?.options?.roles ?? assignments;
-  const team =
-    run?.options?.team ?? (Array.isArray(assignments) ? assignments : null);
+  const team = Array.isArray(assignments) ? assignments : run?.options?.team ?? null;
   const labels = team
     ? Object.fromEntries(
         team.map((agent) => [
@@ -96,6 +95,8 @@ export function createMascot(stage) {
     delivering = false;
   const courier = document.querySelector("#courier");
   function anchor(actor) {
+    if (document.body.dataset.agentDesk === "true")
+      return actor === "gpt" ? document.querySelector("#desk-control-port") : document.querySelector(`[data-desk-agent="${actor}"]`);
     const focused = document.body.dataset.missionMode === "focus";
     if (focused && actor === "gpt") return document.querySelector("#mission-controller");
     if (focused) {
@@ -113,7 +114,7 @@ export function createMascot(stage) {
       !courierQueue.length ||
       !courier ||
       stage.dataset.motion !== "on" ||
-      document.hidden
+      document.hidden || document.querySelector("#agent-session-dialog[open],#workflow-dialog[open]")
     )
       return;
     delivering = true;
@@ -141,10 +142,30 @@ export function createMascot(stage) {
     courier.hidden = false;
     courier.dataset.from = event.from;
     courier.dataset.to = event.to;
+    const caption=courier.querySelector(".courier-caption");
+    if(caption)caption.textContent=event.to==="design"?"시안 배달 중!":event.from==="gpt"?"명령 전달 →":"← 완료 보고";
     const token = runKey;
+    let activePath;
     try {
+      const worker = event.from === "gpt" ? event.to : event.from;
+      const path = document.querySelector(`#desk-links path[data-actor="${worker}"]`);
+      let frames;
+      if (path && event.to !== "design") {
+        activePath=path;
+        const bounds = document.querySelector("#desk-links").getBoundingClientRect();
+        const length = path.getTotalLength(), forward = event.from === "gpt";
+        frames = Array.from({length:33},(_,index)=>{
+          const t=index/32, point=path.getPointAtLength((forward?t:1-t)*length);
+          return {transform:`translate(${bounds.left+point.x-27}px,${bounds.top+point.y-27}px) scaleX(${forward?1:-1})`,opacity:index===0||index===32?0:1,offset:t};
+        });
+        path.classList.add("is-delivering");
+        courier.dataset.direction=forward?"dispatch":"report";
+        courier.dataset.curved="true";
+      } else {
+        courier.dataset.curved="false";
+      }
       const animation = courier.animate(
-        [
+        frames ?? [
           { transform: `translate(${x1}px,${y1}px) rotate(-5deg)`, opacity: 0 },
           {
             transform: `translate(${x1}px,${y1}px) rotate(3deg)`,
@@ -161,8 +182,10 @@ export function createMascot(stage) {
         { duration: 1100, easing: "ease-in-out" },
       );
       await animation.finished;
+      path?.classList.remove("is-delivering");
     } catch {
     } finally {
+      activePath?.classList.remove("is-delivering");
       if (runKey === token) {
         courier.hidden = true;
         delivering = false;
@@ -171,6 +194,7 @@ export function createMascot(stage) {
     }
   }
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  document.addEventListener("desk-dialog-closed",()=>void deliver());
   let enabled = true;
   try {
     enabled = localStorage.getItem("cw-handsoff-mascot-motion") !== "off";

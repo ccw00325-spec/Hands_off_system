@@ -13,8 +13,9 @@
     <script type="module" src="app.js"></script>
     <link rel="stylesheet" href="workbench-v07.css" />
     <link rel="stylesheet" href="mission.css" />
+    <link rel="stylesheet" href="agent-desk.css" />
   </head>
-  <body data-mission-mode="focus" data-mission-panel="gpt">
+  <body data-mission-mode="focus" data-mission-panel="gpt" data-agent-desk="true">
     <dialog id="startup-dialog" aria-labelledby="startup-title">
       <div class="startup-stage" aria-hidden="true">
         <img src="assets/mascot.png" alt="" width="96" height="96" />
@@ -37,7 +38,7 @@
           width="36"
           height="36"
         />
-        CW_Handsoff_sys
+        <span class="app-brand-label">Hands off</span>
         <span class="version" id="app-version">LOCAL / —</span></a
       >
       <button id="open-services" class="subtle" aria-haspopup="dialog">
@@ -58,7 +59,10 @@
         <button id="open-connections" class="connection-button">
           <span class="dot" id="connection-dot"></span> 계정 · 연결
           <span id="connection-count">0</span></button
-        ><button id="open-settings" class="subtle" title="작업·권한·화면 설정">
+        ><button id="notification-bell" type="button" class="notification-bell" popovertarget="notification-popover" aria-label="알림 기록" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <span id="notification-count" hidden></span>
+        </button><button id="open-settings" class="subtle" title="작업·권한·화면 설정">
           설정 ⚙
         </button>
       </div>
@@ -1113,7 +1117,21 @@
         </div>
       </div>
     </dialog>
-    <div id="toast" class="toast" role="status" hidden=""></div>
+    <div id="toast" class="toast" role="status" popover="manual" hidden=""></div>
+    <section id="notification-popover" popover="auto" role="dialog" aria-labelledby="notification-title">
+      <header><h2 id="notification-title">알림</h2><button id="close-notifications" type="button" aria-label="알림 닫기">×</button></header>
+      <div id="notification-items"></div>
+      <footer><span class="hint">알림 기록만 삭제됩니다.</span><button id="clear-notifications" type="button">전부 지우기</button></footer>
+    </section>
+    <dialog id="agent-session-dialog" aria-labelledby="agent-session-title">
+      <header class="desk-dialog-heading"><h2 id="agent-session-title">AI 대화</h2><button id="close-agent-session" type="button" aria-label="AI 대화 닫기">×</button></header>
+      <section id="desk-popup-task" hidden></section>
+      <div id="agent-session-content"></div>
+    </dialog>
+    <dialog id="workflow-dialog" aria-labelledby="workflow-dialog-title">
+      <header class="desk-dialog-heading"><h2 id="workflow-dialog-title">Workflow · 작업과 검증</h2><button id="close-workflow-dialog" type="button" aria-label="Workflow 닫기">×</button></header>
+      <div id="workflow-dialog-content"></div>
+    </dialog>
     <dialog id="usage-dialog" aria-labelledby="usage-title">
       <header class="dialog-heading">
         <div>
@@ -1516,7 +1534,7 @@
       <pre id="test-report-content"></pre>
     </dialog>
     <div id="courier-layer" aria-hidden="true">
-      <img id="courier" src="assets/mascot.png" alt="" width="54" height="54" hidden />
+      <div id="courier" hidden><img src="assets/mascot.png" alt="" width="54" height="54" /><span class="courier-caption"></span></div>
     </div>
   </body>
 </html>

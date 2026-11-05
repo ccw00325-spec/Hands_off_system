@@ -12,6 +12,7 @@ import { FUN_CONTRACT } from "./fun-contract.js";
 import { nativeEnvironment } from "./child-env.js";
 import { isolatedRequest } from "./isolated-request.js";
 import { CHAT_FORMAT } from "./agent-chat.js";
+import { providerFailure } from "./provider-errors.js";
 
 export async function findExecutable(name) {
   const executable = process.platform === "win32" ? `${name}.exe` : name;
@@ -33,8 +34,12 @@ export async function findExecutable(name) {
 }
 
 export async function readResponseStream(response, onUsage) {
-  if (!response.ok || !response.body)
-    throw new Error(`GPT 요청이 실패했습니다. HTTP ${response.status}`);
+  if (!response.ok || !response.body) {
+    if ([401,403].includes(response.status))
+      throw new Error(`GPT 인증 또는 권한 확인이 필요합니다. HTTP ${response.status}`);
+    const detail = await response.json().catch(() => ({}));
+    throw providerFailure("gpt", detail, `GPT 요청이 실패했습니다. HTTP ${response.status}`);
+  }
   let pending = "",
     text = "",
     completed = false;
@@ -57,9 +62,7 @@ export async function readResponseStream(response, onUsage) {
     if (
       ["response.failed", "response.incomplete", "error"].includes(event.type)
     )
-      throw new Error(
-        "GPT 응답이 실패하거나 불완전하게 종료되었습니다. 계정 사용 한도와 연결을 확인하세요.",
-      );
+      throw providerFailure("gpt", event, "GPT 응답이 실패하거나 불완전하게 종료되었습니다. 계정 사용 한도와 연결을 확인하세요.");
     if (text.length > 4_000_000)
       throw new Error("GPT 응답 크기가 처리 한도를 초과했습니다.");
   };
@@ -225,17 +228,10 @@ function runClaude(executable, payload, root, signal, model, onUsage, designImag
       { type: "image", source: { type: "base64", media_type: "image/png", data: designImage } },
     ] } }) + "\n" : payload);
     child.once("close", (code) => {
-      if (code !== 0) {
-        finish(
-          new Error(
-            `Claude가 실패했습니다. 종료 코드 ${code}. 공식 CLI 버전과 로그인 상태를 확인하세요.`,
-          ),
-        );
-        return;
-      }
       try {
         const result = objectJSON(text);
-        if (result.is_error) throw new Error("Claude 작업이 실패했습니다.");
+        if (result.is_error || code !== 0)
+          throw providerFailure("claude", result, `Claude 작업이 실패했습니다. 종료 코드 ${code}. 공식 CLI와 연결 상태를 확인하세요.`);
         const usage = result.usage;
         if (Number.isSafeInteger(usage?.input_tokens))
           onUsage?.(usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0), usage.output_tokens);

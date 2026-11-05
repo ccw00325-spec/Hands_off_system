@@ -8,7 +8,7 @@ function element(tag, text, className) {
   if (className) item.className = className;
   return item;
 }
-export function createMission({ onAction, onMode }) {
+export function createMission({ onAction, onMode, onSelect }) {
   let input = {},
     model = missionState(null),
     selected = "gpt",
@@ -115,7 +115,8 @@ export function createMission({ onAction, onMode }) {
     if (mode !== "focus") setMode("focus");
     applyFocus();
     renderTask();
-    if (scroll)
+    if (onSelect && scroll) onSelect(selected, taskId);
+    else if (scroll)
       $("#mission-output").scrollIntoView({ block: "start", behavior: "auto" });
   }
   function applyFocus() {
@@ -160,7 +161,7 @@ export function createMission({ onAction, onMode }) {
     if (!task) return;
     detail.replaceChildren();
     detail.append(element("strong", task.title || task.id));
-    const owners = (input.run.options?.team ?? input.team).find(
+    const owners = input.team.find(
       (row) => row.id === task.owner,
     );
     detail.append(

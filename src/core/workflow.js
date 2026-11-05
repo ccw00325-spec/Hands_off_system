@@ -188,6 +188,10 @@ export class Workflow {
       };
       this.runs.set(projectId, run);
       await this.record(run, "gpt", "요구사항과 기능 명세를 작성합니다.");
+      for(const change of state.options.preflightSwitches??[])await this.record(run,change.actor,
+        `${PROVIDER_NAMES[change.from]} 사용 한도 소진 → ${PROVIDER_NAMES[change.provider]}로 전환합니다. 같은 역할과 완료 기준을 유지합니다.`,
+        {activity:"fallback",fromProvider:change.from,provider:change.provider});
+      delete state.options.preflightSwitches;
       run.promise = this.execute(run).catch(async (error) => {
         const cancelled = run.controller.signal.aborted && !run.failure;
         state.status = cancelled ? "cancelled" : "needs_attention";
@@ -224,6 +228,7 @@ export class Workflow {
       const event = {
         at: new Date().toISOString(),
         actor,
+        ...(actor !== "system" ? { provider: teamFor(run.state.options).find((agent) => agent.id === actor)?.provider } : {}),
         message: redact(message),
         ...redactData(details),
       };
@@ -262,14 +267,11 @@ export class Workflow {
     const { state } = run;
     const usage = state.usage ??= { calls: 0, byPanel: {} };
     const provider = teamFor(state.options).find((agent) => agent.id === actor)?.provider;
-    const api = provider === "gpt" && state.options.gptSource === "api";
-    if (api && state.options.apiBudgetUsd > 0 && !admitted) {
+    let api = provider === "gpt" && state.options.gptSource === "api";
+    const mayUseApi = state.options.gptSource === "api" && teamFor(state.options).some((agent) => agent.provider === "gpt" || agent.fallback?.provider === "gpt");
+    if (mayUseApi && state.options.apiBudgetUsd > 0 && !admitted) {
       const operation = (run.apiQueue ?? Promise.resolve()).then(() => {
         context.signal.throwIfAborted();
-        const model = agentOptions(state.options, actor).gptModel;
-        if (model !== state.options.apiRateModel || usage.costUnknown ||
-            (usage.estimatedUsd ?? 0) >= state.options.apiBudgetUsd)
-          throw new Error("GPT API 예산 한도 또는 모델 단가를 확인하세요.");
         return this.callAgent(run, actor, action, context, true);
       });
       run.apiQueue = operation.catch(() => {});
@@ -284,16 +286,40 @@ export class Workflow {
       }
     }
     context.signal.throwIfAborted();
-    if (usage.calls >= (state.options.maxAgentCalls ?? Infinity)) {
-      run.callWaiters?.shift()?.();
-      throw new Error("AI 호출 한도에 도달했습니다. 설정에서 한도를 확인한 뒤 새 작업을 시작하세요.");
-    }
     run.activeCalls = (run.activeCalls ?? 0) + 1;
-    usage.calls++;
     const panel = usage.byPanel[actor] ??= { calls: 0, input: 0, output: 0, measured: 0 };
-    panel.calls++;
     const started = Date.now();
-    let measured = false;
+    let measured = false, attempted = false, actualProvider = provider, actualModel;
+    const onProviderAttempt = async ({ provider: next }) => {
+      if (attempted && api && !measured) usage.costUnknown = true;
+      attempted = false;
+      api = next === "gpt" && state.options.gptSource === "api";
+      actualProvider = next;
+      const routeOptions=agentOptions(state.options,actor);
+      actualModel=({gpt:routeOptions.gptModel,claude:routeOptions.claudeModel,gemini:routeOptions.geminiModel,grok:routeOptions.grokRoute?.modelId})[next];
+      measured = false;
+      if (usage.calls >= (state.options.maxAgentCalls ?? Infinity))
+        throw new Error("AI 호출 한도에 도달했습니다. 설정에서 한도를 확인한 뒤 새 작업을 시작하세요.");
+      if (api && state.options.apiBudgetUsd > 0) {
+        const model = agentOptions(state.options, actor).gptModel;
+        if (model !== state.options.apiRateModel || usage.costUnknown || (usage.estimatedUsd ?? 0) >= state.options.apiBudgetUsd)
+          throw new Error("GPT API 예산 한도 또는 모델 단가를 확인하세요.");
+      }
+      attempted = true;
+      usage.calls++;
+      panel.calls++;
+      panel.providers ??= {};
+      panel.providers[next] = (panel.providers[next] ?? 0) + 1;
+    };
+    const onProviderSwitch = async (change) => {
+      state.options.runtimeRoutes ??= {};
+      if (state.options.runtimeRoutes[actor]) return;
+      state.options.runtimeRoutes[actor] = { provider: change.provider, ...(change.modelId ? { modelId: change.modelId } : {}) };
+      if (run.ephemeral) await run.routeChanged?.();
+      else await this.record(run, actor,
+        `${PROVIDER_NAMES[change.from]} 사용 한도 소진 → ${PROVIDER_NAMES[change.provider]}로 전환합니다. 현재 작업과 완료 기준을 유지합니다.`,
+        { activity: "fallback", fromProvider: change.from, provider: change.provider, taskId: context.task?.id });
+    };
     const onUsage = (input, output, model) => {
       if (measured || ![input, output].every((value) => Number.isSafeInteger(value) && value >= 0)) return;
       measured = true;
@@ -307,24 +333,32 @@ export class Workflow {
         panel.estimatedUsd = (panel.estimatedUsd ?? 0) + cost;
       } else if (api) usage.costUnknown = true;
     };
-    this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
+    if (!run.ephemeral) this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
     try {
       const { snapshot, signal, options, designImage, ...rest } = context;
       const payload = {
         ...redactData(rest), signal, designImage,
         snapshot: providerSnapshot(snapshot),
-        options: { ...redactData(options), onUsage },
+        options: { ...redactData(options), runtimeRoutes: state.options.runtimeRoutes ?? {}, onUsage, onProviderAttempt, onProviderSwitch },
       };
+      // Plain providers used by embedders/tests do not implement the routing hooks.
+      if (!this.providers[actor].routed) await onProviderAttempt({ provider });
       const result = await this.providers[actor][action](payload);
-      return action === "build" && result && typeof result.summary === "string"
-        ? { ...result, summary: redact(result.summary) }
-        : redactData(result);
+      if(result&&typeof result==="object"&&!Array.isArray(result)) {
+        // Preserve proposed file bytes until the write guard can reject secrets.
+        // Redacting them here would hide the finding and silently change code.
+        const safeResult=action==="build"&&typeof result.summary==="string"
+          ? {...result,summary:redact(result.summary)} : redactData(result);
+        return { ...safeResult, executedProvider:actualProvider, ...(actualModel?{executedModel:actualModel}:{}) };
+      }
+      return redactData(result);
     } finally {
       run.activeCalls--;
       run.callWaiters?.shift()?.();
-      if (api && !measured) usage.costUnknown = true;
+      if (attempted && api && !measured) usage.costUnknown = true;
       panel.elapsedMs = (panel.elapsedMs ?? 0) + Date.now() - started;
-      this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
+      panel.lastProvider = actualProvider;
+      if (!run.ephemeral) this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
     }
   }
   async reviseDesign(projectId, feedback, provider, conversationId) {
@@ -497,6 +531,8 @@ export class Workflow {
       });
     }
     task.status = "reported";
+    task.executedProvider = report.executedProvider ?? teamFor(state.options).find((agent) => agent.id === task.owner)?.provider;
+    if(report.executedModel) task.executedModel=report.executedModel;
     if (task.kind === "test" && state.testing) state.testing.status = "ready";
     task.report = {
       summary: report.summary,
@@ -797,6 +833,7 @@ export class Workflow {
       );
       for (const review of reviews)
         await this.record(run, review.actor, review.summary, {
+          ...(review.executedProvider?{provider:review.executedProvider}:{}),
           issues: review.issues,
           snapshotHash: frozen.hash,
         });

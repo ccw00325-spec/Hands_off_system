@@ -1,4 +1,4 @@
-import { PROVIDERS } from "../core/team.js";
+import { PROVIDERS, teamFor } from "../core/team.js";
 
 const LIVE = new Set([
   "planning",
@@ -36,7 +36,7 @@ export function missionState(run, team = []) {
   const done = status === "completed" && validationPassed;
   const stopped = ["cancelled", "interrupted"].includes(status);
   const taskNodes = tasks.map((task) => {
-    const agent = (run.options?.team ?? team).find(
+    const agent = (run.options?.team ? teamFor(run.options) : team).find(
       (row) => row.id === task.owner,
     );
     return {
@@ -44,7 +44,7 @@ export function missionState(run, team = []) {
       actor: task.owner,
       kind: task.kind,
       title: task.title || task.id,
-      label: agent ? PROVIDERS[agent.provider] : task.owner,
+      label: PROVIDERS[task.executedProvider ?? agent?.provider] ?? task.owner,
       state:
         {
           working: "active",

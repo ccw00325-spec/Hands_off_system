@@ -6,6 +6,7 @@ import {
   validateTeam,
   defaultTeam,
 } from "../core/team.js";
+import { providerIcon } from "./provider-icon.js";
 const $ = (selector) => document.querySelector(selector);
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -82,6 +83,40 @@ export function renderTeamEditor(team, catalog) {
     const modelRow = node("div", undefined, "action-row");
     modelRow.append(models, load);
     field.append(modelLabel, modelRow, status);
+    const backupBox = node("div", undefined, "fallback-setting");
+    const backupLabel = node("label", "사용 한도 소진 시 대체 AI");
+    backupLabel.htmlFor = `fallback-${agent.id}`;
+    const backup = node("select");
+    backup.id = `fallback-${agent.id}`;
+    backup.className = "fallback-provider";
+    backup.append(new Option("자동 대체 사용 안 함", ""), ...Object.entries(PROVIDERS).map(([id,name]) => new Option(name,id)));
+    backup.value = agent.fallback?.provider ?? "";
+    const backupModels = node("select");
+    backupModels.id = `fallback-model-${agent.id}`;
+    backupModels.className = "fallback-model";
+    backupModels.setAttribute("aria-label", "대체 AI 모델");
+    backupModels.append(new Option("대체 공급자 기본 모델", ""));
+    if (agent.fallback?.modelId) { backupModels.append(new Option(agent.fallback.modelId,agent.fallback.modelId)); backupModels.value=agent.fallback.modelId; }
+    const backupLoad = node("button", "대체 모델 조회 ↻", "text-button");
+    backupLoad.type = "button";
+    const backupStatus = node("p", "한도 소진이 확인되면 선택한 대체 AI에 현재 명세·코드를 전달해 같은 작업을 이어갑니다. 같은 공급자의 모델은 한도를 공유할 수 있으며 이미지 생성 API는 별도 설정을 사용합니다.", "hint");
+    const backupEnabled = () => { backupModels.disabled = backupLoad.disabled = !backup.value; };
+    backupEnabled();
+    backup.addEventListener("change", () => { backupModels.replaceChildren(new Option("대체 공급자 기본 모델", "")); backupEnabled(); });
+    backupLoad.addEventListener("click", async () => {
+      const provider = backup.value; backupLoad.disabled = true;
+      try {
+        const rows = await catalog(provider);
+        if (backup.value !== provider) return;
+        const previous = backupModels.value;
+        backupModels.replaceChildren(new Option("대체 공급자 기본 모델", ""), ...rows.map(row => new Option(row.name ?? row.id,row.id)));
+        if (rows.some(row => row.id === previous)) backupModels.value = previous;
+        backupStatus.textContent = rows.length ? `${rows.length}개 대체 모델 · 전환 시 로그인과 사용 권한을 다시 확인합니다.` : "대체 AI 연결과 모델 목록을 확인하세요.";
+      } catch (error) { backupStatus.textContent = error.message; }
+      finally { backupEnabled(); }
+    });
+    const backupRow = node("div", undefined, "action-row"); backupRow.append(backupModels,backupLoad);
+    backupBox.append(backupLabel,backup,backupRow,backupStatus); field.append(backupBox);
     const checks = node("div", undefined, "role-checks");
     for (const [role, name] of Object.entries(CAPABILITIES)) {
       const wrapper = node("label", undefined, "check-label");
@@ -108,6 +143,10 @@ export function readTeamEditor() {
       ...(field.querySelector(".panel-model").value
         ? { modelId: field.querySelector(".panel-model").value }
         : {}),
+      ...(field.querySelector(".fallback-provider").value ? { fallback: {
+        provider: field.querySelector(".fallback-provider").value,
+        ...(field.querySelector(".fallback-model").value ? {modelId:field.querySelector(".fallback-model").value} : {}),
+      } } : {}),
     })),
   );
 }
@@ -144,12 +183,7 @@ export function renderPanelTeam(team) {
     if (!agent) continue;
     const heading = panel.querySelector("h2 strong");
     heading.textContent = PROVIDERS[agent.provider];
-    panel.querySelector(".agent-icon").textContent = {
-      gpt: "G",
-      grok: "/",
-      claude: "✳",
-      gemini: "✦",
-    }[agent.provider];
+    panel.querySelector(".agent-icon").replaceChildren(providerIcon(agent.provider,28));
     panel.querySelector("h2 span").textContent = agent.roles
       .map((role) => CAPABILITIES[role])
       .join(" · ");

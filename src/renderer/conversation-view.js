@@ -108,7 +108,7 @@ export function terminalFeed(container, events, messages, provider) {
             : "시스템"
         : item.actor === "system"
           ? "SYSTEM"
-          : provider;
+          : (PROVIDERS[item.provider] ?? provider);
     meta.append(time, el("span", who));
     row.append(meta);
     row.append(

@@ -9,10 +9,11 @@ const output = resolve(process.argv[2] ?? "release");
 const archive = join(output, "win-unpacked", "resources", "app.asar");
 const entries = asar.listPackage(archive);
 const allowed = /^(?:|package\.json|src|src\/(?:core|renderer|renderer\/assets|skills)|src\/[^/]+\.(?:js|cjs)|src\/core\/[^/]+\.js|src\/renderer\/[^/]+\.(?:js|css)|src\/renderer\/index\.html|src\/renderer\/assets\/mascot\.png|src\/skills\/(?:fun\.md|gemini-readonly\.toml)|node_modules|node_modules\/jose(?:\/.*)?)$/;
+const assetAllowed = /^src\/renderer\/assets\/(?:provider-(?:gpt|claude|gemini|grok)\.svg|providers-NOTICE\.txt)$/;
 const unwanted = entries.filter((entry) => {
   const path = entry.replaceAll("\\", "/").replace(/^\//, "");
   const linked = Boolean(path && asar.statFile(archive, path.split("/").join(sep), false).link);
-  return linked || !allowed.test(path) ||
+  return linked || (!allowed.test(path) && !assetAllowed.test(path)) ||
     /(?:^|\/)(?:\.env(?:\.[^/]*)?|vault[^/]*|auth\.json|oauth_creds\.json|credentials[^/]*|[^/]+\.(?:pem|pfx|enc))(?:\/|$)/i.test(path);
 });
 async function files(directory) {

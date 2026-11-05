@@ -16,6 +16,7 @@ import { nodeRuntime } from "./node-runtime.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { CHAT_FORMAT } from "./agent-chat.js";
+import { providerFailure } from "./provider-errors.js";
 
 export const GEMINI_VERSION = "0.66.0";
 async function exists(path) {
@@ -410,6 +411,8 @@ export class GeminiConnection {
       if (result.stopReason !== "end_turn")
         throw new Error("Gemini 작업이 정상 완료되지 않았습니다.");
       return objectJSON(text);
+    } catch (error) {
+      throw providerFailure("gemini", error, error.message);
     } finally {
       context.signal.removeEventListener("abort", abort);
       await rpc.close();

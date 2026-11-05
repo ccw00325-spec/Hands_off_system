@@ -1,0 +1,891 @@
+/* Hallmark · approved vertical agent desk · established Terminal tokens.
+ * P5 H5 E4 S5 R5 V5: chat first; task history beside 2–4 readable provider buttons. */
+:root {
+  --desk-claude: #df9b7c;
+  --desk-gemini: #9fb1ff;
+  --desk-cursor: #b5bec8;
+  --desk-sidebar: 210px;
+  --desk-space: 12px;
+}
+.provider-logo {
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.provider-logo-gpt,
+.provider-logo-grok {
+  filter: brightness(0) invert(1);
+}
+body[data-agent-desk] .workbench-shell {
+  grid-template-columns: var(--desk-sidebar) minmax(0, 1fr);
+}
+body[data-agent-desk].sidebar-collapsed .workbench-shell {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+body[data-agent-desk] .workbench-shell > main {
+  padding: 16px 20px;
+  min-width: 0;
+}
+body[data-agent-desk] #workspace-view:not([hidden]) {
+  display: block;
+}
+body[data-agent-desk] #mission-controller,
+body[data-agent-desk] .rolebar,
+body[data-agent-desk] .dispatch {
+  display: none;
+}
+.desk-layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) 76px minmax(350px, 440px);
+  align-items: start;
+  min-width: 0;
+  isolation: isolate;
+}
+.desk-chat,
+.desk-rail {
+  position: relative;
+  min-width: 0;
+  z-index: 1;
+}
+.desk-chat {
+  align-self: stretch;
+}
+.desk-control-port {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  top: 50%;
+  right: -5px;
+  border-radius: 50%;
+  background: var(--mint);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 2px var(--mint-bg);
+}
+#desk-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+#desk-links path {
+  fill: none;
+  stroke-width: 1.5;
+  stroke: var(--mint);
+  opacity: 0.65;
+}
+#desk-links circle {
+  fill: var(--mint);
+}
+#desk-links [data-provider="claude"] {
+  stroke: var(--desk-claude);
+}
+#desk-links [data-provider="gemini"] {
+  stroke: var(--desk-gemini);
+}
+#desk-links [data-provider="grok"] {
+  stroke: var(--desk-cursor);
+}
+#desk-links .desk-same-session {
+  stroke-dasharray: 3 5;
+  opacity: 0.3;
+}
+#desk-links path.is-delivering {
+  opacity: 1;
+  stroke-width: 2.5;
+}
+#courier {
+  width: 54px;
+  height: 54px;
+}
+#courier > img {
+  display: block;
+  width: 54px;
+  height: 54px;
+}
+.courier-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--mint);
+  color: var(--white);
+}
+#courier[data-curved="true"][data-direction="report"] .courier-caption {
+  transform: translateX(-50%) scaleX(-1);
+}
+.desk-rail {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.desk-rail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 12px;
+}
+.desk-rail h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.desk-rail #open-roles {
+  min-height: 38px;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.desk-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.desk-agent-card {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 142px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--raised);
+}
+.desk-agent-identity {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+.desk-agent-logo {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  background: var(--surface);
+  border-radius: 12px;
+}
+.desk-agent-logo:hover {
+  border-color: var(--mint);
+}
+.desk-agent-logo:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.desk-agent-identity strong {
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.desk-agent-identity small {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.desk-agent-model {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body[data-agent-desk] .terminal-entry-text {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.75;
+}
+body[data-agent-desk] #planner-input,
+body[data-agent-desk] .agent-chat-form textarea {
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+.desk-agent-history {
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+}
+.desk-task {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  padding: 6px 3px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 3px 5px;
+  width: 100%;
+  min-height: 42px;
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.desk-task > span:not(.desk-task-symbol) {
+  overflow-wrap: anywhere;
+}
+.desk-task small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 10px;
+}
+.desk-task-symbol {
+  color: var(--muted);
+}
+.desk-task[data-state="working"] .desk-task-symbol,
+.desk-task[data-state="reported"] .desk-task-symbol {
+  color: var(--mint);
+}
+.desk-task[data-state="failed"] .desk-task-symbol,
+.desk-task[data-state="blocked"] .desk-task-symbol {
+  color: var(--error);
+}
+.desk-task[data-state="working"] small {
+  color: var(--mint);
+}
+.desk-task:hover {
+  background: var(--surface);
+}
+.desk-older-tasks {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.desk-older-tasks > div {
+  max-height: 210px;
+  overflow-y: auto;
+}
+.desk-older-tasks summary {
+  cursor: pointer;
+  min-height: 32px;
+  padding: 6px 2px;
+}
+.desk-connected,
+.desk-disconnected,
+.desk-fallback-tag,
+.desk-backup-hint {
+  font-size: 10px;
+  line-height: 1.45;
+}
+.desk-connected {
+  color: var(--mint);
+}
+.desk-disconnected {
+  color: var(--warning);
+}
+.desk-fallback-tag {
+  color: var(--warning);
+  overflow-wrap: anywhere;
+}
+.desk-backup-hint {
+  display: block;
+  margin-top: 5px;
+  color: var(--dim);
+}
+.desk-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+.desk-summary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--subtle-border);
+  background: var(--mint-bg);
+  order: 0;
+}
+.desk-summary p {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.desk-summary button {
+  flex-shrink: 0;
+  font-size: 11px;
+  min-height: 34px;
+  white-space: normal;
+  max-width: 150px;
+  padding: 6px 9px;
+}
+body[data-agent-desk] .desk-chat .planner {
+  display: flex;
+  width: 100%;
+  height: max(610px, calc(100vh - 282px));
+  min-height: 610px;
+  margin: 0;
+  border-radius: 14px;
+}
+body[data-agent-desk] .desk-chat .planner .terminal-body {
+  flex: 1;
+  min-height: 180px;
+  height: auto;
+  max-height: none;
+  overflow: auto;
+  padding: 12px 16px;
+}
+body[data-agent-desk] .planner .terminal-body > .log-line {
+  display: none;
+}
+body[data-agent-desk] .planner .panel-heading {
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  min-height: 72px;
+}
+body[data-agent-desk] .planner .panel-heading .agent-name p {
+  display: none;
+}
+body[data-agent-desk] .planner .agent-icon {
+  background: var(--surface);
+  color: var(--text);
+}
+body[data-agent-desk] .planner .panel-actions {
+  margin-left: auto;
+}
+body[data-agent-desk] .planner .panel-actions button {
+  font-size: 10px;
+  min-height: 30px;
+  padding: 4px 6px;
+}
+body[data-agent-desk] .planner .composer {
+  padding: 12px;
+  flex-shrink: 0;
+}
+body[data-agent-desk] #planner-input {
+  min-height: 65px;
+  max-height: 160px;
+  padding: 12px;
+}
+body[data-agent-desk] .composer-meta {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body[data-agent-desk] .composer-meta > span {
+  display: none;
+}
+body[data-agent-desk] .composer .mutation-option-row {
+  font-size: 11px;
+  margin-top: 8px;
+}
+body[data-agent-desk] #mutation-option-hint {
+  display: none;
+}
+.desk-controller-placeholder {
+  min-height: 610px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  color: var(--muted);
+}
+.desk-project-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.desk-run-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--mint);
+}
+body[data-agent-desk] .desk-chat .planner > .panel-heading .panel-actions {
+  display: none;
+}
+body[data-agent-desk] .desk-chat .planner > .panel-heading .desk-project-tools {
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.desk-project-tools button {
+  font-size: 12px;
+}
+body[data-agent-desk] .project-heading {
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+body[data-agent-desk] .project-heading .eyebrow,
+body[data-agent-desk] .project-heading .secondary {
+  display: none;
+}
+body[data-agent-desk] .project-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+body[data-agent-desk] .view-tabs {
+  margin-bottom: 12px;
+}
+body[data-agent-desk] .project-sidebar #new-project {
+  width: 100%;
+  margin-bottom: 14px;
+  min-height: 44px;
+  background: var(--mint);
+  color: var(--white);
+  font-weight: 700;
+}
+.desk-sidebar-actions {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+}
+.desk-sidebar-actions button {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  font-size: 12px;
+}
+body[data-agent-desk] #sidebar-new-project {
+  display: none;
+}
+#agent-session-dialog {
+  width: min(1040px, calc(100vw - 36px));
+  max-width: none;
+  padding: 0;
+  max-height: calc(100vh - 36px);
+}
+#agent-session-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.desk-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.desk-dialog-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.desk-dialog-heading > button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  font-size: 24px;
+  padding: 0;
+}
+#agent-session-content {
+  overflow: auto;
+  min-height: 0;
+}
+body[data-agent-desk] #agent-session-dialog .terminal {
+  display: flex;
+  flex-direction: column;
+  min-height: 480px;
+  height: min(680px, calc(100vh - 150px));
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+body[data-agent-desk] #agent-session-dialog .worker-empty {
+  padding: 16px;
+}
+body[data-agent-desk] #agent-session-dialog .event-list {
+  flex: 1;
+  overflow: auto;
+  max-height: none;
+  min-height: 100px;
+}
+body[data-agent-desk] #agent-session-dialog .worker-footer {
+  flex-wrap: wrap;
+}
+body[data-agent-desk] #agent-session-dialog .agent-chat-form {
+  flex-shrink: 0;
+}
+#agent-session-dialog[data-historical="true"] .agent-chat-form {
+  display: none;
+}
+body[data-agent-desk] #agent-session-dialog textarea {
+  min-height: 62px;
+}
+#desk-popup-task {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  max-height: 190px;
+  overflow: auto;
+}
+#desk-popup-task p,
+#desk-popup-task li {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#workflow-dialog {
+  width: min(1160px, calc(100vw - 36px));
+  max-width: none;
+  padding: 0;
+  max-height: calc(100vh - 36px);
+}
+#workflow-dialog-content {
+  padding: 0 18px 18px;
+}
+body[data-agent-desk] #workflow-dialog .task-inspector {
+  display: block;
+  position: static;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  padding: 12px 0;
+  overflow: visible;
+  border: 0;
+}
+#workflow-dialog #mission-output {
+  display: none;
+}
+#workflow-dialog .mission-view-controls {
+  display: none;
+}
+#workflow-dialog .mission-flow {
+  padding-top: 12px;
+}
+body[data-agent-desk] #workflow-dialog .mascot-stage {
+  margin-top: 12px;
+}
+#workflow-dialog #inspector-tasks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.fallback-setting {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+.fallback-setting .hint {
+  margin: 0;
+}
+.notification-bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  padding: 8px;
+  flex-shrink: 0;
+}
+#notification-count {
+  position: absolute;
+  right: -5px;
+  top: -6px;
+  border-radius: 20px;
+  font-size: 10px;
+  padding: 1px 5px;
+  background: var(--mint);
+  color: var(--white);
+  min-width: 18px;
+}
+#notification-popover {
+  position: fixed;
+  inset: 70px 16px auto auto;
+  margin: 0;
+  width: min(410px, calc(100vw - 24px));
+  max-height: calc(100vh - 100px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+#notification-popover:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+#notification-popover > header,
+#notification-popover > footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+#notification-popover > header {
+  border-bottom: 1px solid var(--border);
+}
+#notification-popover > header h2 {
+  font-size: 16px;
+  margin: 0;
+}
+#notification-popover > footer {
+  border-top: 1px solid var(--border);
+}
+#notification-popover footer .hint {
+  font-size: 10px;
+}
+#notification-items {
+  overflow: auto;
+  min-height: 0;
+  padding: 8px;
+}
+.notification-item {
+  position: relative;
+  padding: 12px 38px 12px 12px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.notification-item p {
+  margin: 0 0 7px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.notification-item time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.notification-delete {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 30px;
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 5px;
+  opacity: 0;
+}
+.notification-item:hover .notification-delete,
+.notification-item:focus-within .notification-delete {
+  opacity: 1;
+}
+.notification-item button:not(.notification-delete) {
+  min-height: 32px;
+  font-size: 11px;
+  padding: 4px 7px;
+}
+.notification-item[data-type="error"] {
+  border-color: var(--warning);
+}
+#toast {
+  position: fixed;
+  left: auto;
+  right: 20px;
+  bottom: auto;
+  top: 112px;
+  transform: none;
+  width: min(410px, calc(100vw - 32px));
+  padding: 14px 40px 18px 16px;
+  z-index: 100;
+  border: 1px solid var(--mint);
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: 12px;
+}
+#toast p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+#toast > button {
+  margin-top: 8px;
+  font-size: 11px;
+}
+#toast .toast-dismiss {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  margin: 0;
+}
+#toast .toast-countdown {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+#toast .toast-timer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--mint);
+  transform-origin: left;
+  animation: desk-toast-expire 10s linear forwards;
+}
+@keyframes desk-toast-expire {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (max-width: 1100px) {
+  :root {
+    --desk-sidebar: 190px;
+  }
+  .desk-layout {
+    grid-template-columns: minmax(320px, 1fr) 46px minmax(300px, 340px);
+  }
+  .desk-agent-card {
+    grid-template-columns: 98px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+  .desk-agent-history {
+    padding-left: 8px;
+  }
+  body[data-agent-desk] .workbench-shell > main {
+    padding: 12px;
+  }
+  .desk-summary {
+    flex-wrap: wrap;
+  }
+  .desk-summary button {
+    margin-left: auto;
+  }
+}
+@media (max-width: 950px) {
+  .desk-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .desk-gutter,
+  #desk-links,
+  .desk-control-port {
+    display: none;
+  }
+  .desk-agent-card {
+    grid-template-columns: 130px minmax(0, 1fr);
+    min-height: 142px;
+  }
+  body[data-agent-desk] .desk-chat .planner {
+    min-height: 590px;
+    height: 620px;
+  }
+}
+@media (max-width: 767px) {
+  body[data-agent-desk] .workbench-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body[data-agent-desk] .project-sidebar {
+    display: none;
+  }
+  body[data-agent-desk].sidebar-open .project-sidebar {
+    display: block;
+    grid-column: 1;
+    width: 100%;
+    max-height: 280px;
+  }
+  body[data-agent-desk].sidebar-collapsed .workbench-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body[data-agent-desk] .topbar {
+    padding: 9px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  body[data-agent-desk] .brand {
+    font-size: 13px;
+  }
+  body[data-agent-desk] .top-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  body[data-agent-desk] .top-actions button {
+    font-size: 11px;
+    padding: 6px 9px;
+  }
+  body[data-agent-desk] .tokenbar {
+    padding: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+  body[data-agent-desk] .quota-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  body[data-agent-desk] .quota-item {
+    width: auto;
+    min-width: 98px;
+    font-size: 10px;
+  }
+  body[data-agent-desk] .project-heading {
+    display: block;
+  }
+  body[data-agent-desk] .project-status {
+    justify-content: flex-start;
+    margin-top: 8px;
+  }
+  .desk-agent-card {
+    grid-template-columns: 105px minmax(0, 1fr);
+  }
+  .desk-agent-logo {
+    width: 58px;
+    height: 58px;
+  }
+  body[data-agent-desk] .planner .composer-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  body[data-agent-desk] .model-controls {
+    flex-wrap: wrap;
+  }
+  body[data-agent-desk] .model-controls select {
+    max-width: 100%;
+    min-width: 0;
+  }
+  body[data-agent-desk] .panel-actions {
+    flex-wrap: wrap;
+  }
+  body[data-agent-desk] .statusbar > span:first-child {
+    display: none;
+  }
+  #agent-session-dialog,
+  #workflow-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+  .desk-dialog-heading {
+    padding: 10px;
+  }
+  .desk-dialog-heading h2 {
+    font-size: 13px;
+  }
+  #workflow-dialog #inspector-tasks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notification-delete {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #toast .toast-timer {
+    animation: none;
+  }
+}

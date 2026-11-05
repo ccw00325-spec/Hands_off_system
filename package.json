@@ -1,6 +1,6 @@
 {
   "name": "cw-handsoff-sys",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Local multi-AI engineering workbench with role-based delegation.",
   "type": "module",
@@ -38,6 +38,8 @@
       "src/renderer/*.css",
       "src/renderer/index.html",
       "src/renderer/assets/mascot.png",
+      "src/renderer/assets/provider-*.svg",
+      "src/renderer/assets/providers-NOTICE.txt",
       "src/skills/fun.md",
       "src/skills/gemini-readonly.toml",
       "package.json"

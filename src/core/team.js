@@ -52,11 +52,22 @@ export function validateTeam(team) {
     )
       throw new Error("컨트롤 타워는 첫 번째 패널에 배정하세요.");
     if (agent.modelId !== undefined) validateModelId(agent.modelId);
+    let fallback;
+    if (agent.fallback !== undefined) {
+      const next = agent.fallback;
+      if (!next || !Object.hasOwn(PROVIDERS, next.provider))
+        throw new Error("대체 AI 공급자를 확인하세요.");
+      if (next.modelId !== undefined) validateModelId(next.modelId);
+      if (next.provider === agent.provider && (next.modelId || "") === (agent.modelId || ""))
+        throw new Error("대체 AI는 기본 AI와 다른 공급자 또는 모델로 선택하세요.");
+      fallback = { provider: next.provider, ...(next.modelId ? { modelId: next.modelId } : {}) };
+    }
     return {
       id: agent.id,
       provider: agent.provider,
       roles: [...agent.roles],
       ...(agent.modelId ? { modelId: agent.modelId } : {}),
+      ...(fallback ? { fallback } : {}),
     };
   });
   if (
@@ -70,7 +81,16 @@ export function validateTeam(team) {
   return normalized;
 }
 export function teamFor(options = {}) {
-  return validateTeam(options.team ?? defaultTeam(options.roles));
+  const team = validateTeam(options.team ?? defaultTeam(options.roles));
+  return team.map((agent) => {
+    const route = options.runtimeRoutes?.[agent.id];
+    if (!route) return agent;
+    if (!agent.fallback || route.provider !== agent.fallback.provider ||
+        (route.modelId || "") !== (agent.fallback.modelId || ""))
+      throw new Error("저장된 대체 AI 경로와 역할 설정이 일치하지 않습니다.");
+    const { modelId: _old, ...rest } = agent;
+    return { ...rest, provider: route.provider, ...(route.modelId ? { modelId: route.modelId } : {}) };
+  });
 }
 export function resizeTeam(team, count) {
   if (!Number.isInteger(count) || count < 2 || count > 4)

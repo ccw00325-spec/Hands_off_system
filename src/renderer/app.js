@@ -7,6 +7,9 @@ import { fillPreferences, readPreferences } from "./settings-view.js";
 import { quotaWindows } from "../core/quota-view.js";
 import { createMascot } from "./mascot.js";
 import { createMission } from "./mission-view.js";
+import { createAgentDesk } from "./agent-desk.js";
+import { createNotifications } from "./notification-view.js";
+import { displayedTeam } from "./desk-state.js";
 import { CAPABILITIES, SLOT_IDS, defaultTeam } from "../core/team.js";
 import {
   renderTeamEditor,
@@ -18,20 +21,19 @@ import {
   renderSidebarFiles,
 } from "./workbench.js";
 const $ = (selector) => document.querySelector(selector);
+let desk, notifications;
 const mascot = createMascot($("#mascot-stage"));
-const mission = createMission({ onAction: missionAction, onMode: () => renderAssignedRoles() });
+const mission = createMission({ onAction: missionAction, onMode: () => renderAssignedRoles(), onSelect: (actor,taskId) => desk?.openAgent(actor,taskId) });
 const api = window.tower;
 let projectData,
   connection,
   editingProject = false,
-  resultImage = null,
-  toastTimer;
+  resultImage = null;
 let generationProject = null;
 let missionDelivery = null;
 let folderTicket = null,
   linkedFolder = null,
   currentRun = null;
-  missionDelivery = null;
 const ACTIVE_RUN = new Set([
   "planning",
   "awaiting_design",
@@ -73,17 +75,22 @@ let preferences = null,
 const activeRuns = new Map(),
   pendingChats = new Map(),
   liveBuffers = new Map();
+desk = createAgentDesk({ onAction: missionAction });
+notifications = createNotifications(api, handleNotification);
 
 function toast(message, type = "") {
-  $("#toast").textContent = message;
-  $("#toast").className = `toast ${type}`;
-  $("#toast").hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    $("#toast").hidden = true;
-  }, 6500);
-  $("#footer-status").textContent = message;
+  notifications.push(message, type, { projectId: projectData?.activeId, conversationId: currentConversation?.id });
 }
+async function handleNotification(item) {
+  try {
+    if (item.projectId && item.projectId !== projectData?.activeId)
+      renderProjects(await call(api.selectProject(item.projectId)));
+    if (item.conversationId && item.conversationId !== currentConversation?.id)
+      await loadConversation(item.conversationId);
+    missionAction(item.action ?? "workflow");
+  } catch (error) { toast(error.message,"error"); }
+}
+function currentDisplayTeam() { return displayedTeam(currentRun, teamConfig ?? [], currentConversation); }
 async function call(promise) {
   const result = await promise;
   if (!result.ok) throw new Error(result.error);
@@ -613,7 +620,7 @@ $("#export-image").addEventListener("click", () =>
 );
 $("#model-button").addEventListener("click", () =>
   busy($("#model-button"), "목록 확인 중…", async () => {
-    if (teamConfig?.[0].provider !== "gpt") {
+    if (currentDisplayTeam()[0]?.provider !== "gpt" || currentDisplayTeam()[0]?.modelId) {
       await openRoles("gpt");
       return;
     }
@@ -652,6 +659,7 @@ $("#model-button").addEventListener("click", () =>
 $("#close-models").addEventListener("click", () => $("#models-dialog").close());
 
 async function initialize() {
+  void notifications.init().catch(() => { $("#footer-status").textContent = "알림 기록을 읽지 못했습니다. 작업 기능은 계속 사용할 수 있습니다."; });
   if (!api) {
     toast(
       "이 화면은 데스크톱 앱에서 실행하세요. 프로젝트 폴더에서 npm start를 실행하면 됩니다.",
@@ -690,6 +698,11 @@ async function initialize() {
         }
         return;
       }
+      if (event.type === "agent-routing") {
+        if (event.projectId === projectData?.activeId && event.conversationId === currentConversation?.id)
+          void loadConversation(currentConversation.id);
+        return;
+      }
       if (event.type === "agent-progress") {
         if (
           event.projectId !== projectData?.activeId ||
@@ -716,6 +729,7 @@ async function initialize() {
         return;
       }
       if (event.type === "workflow") {
+        notifications.observe(event.state,{projectId:event.projectId,conversationId:event.state.options.conversationId});
         const prior = activeRuns.get(event.projectId);
         if (event.projectId === projectData?.activeId && event.state.testFailure?.status === "intervention" &&
             (prior?.id !== event.state.id || prior.testFailure?.status !== "intervention"))
@@ -993,7 +1007,7 @@ const RUN_LABELS = {
   validating: "검증 실행 중",
   reviewing: "컨트롤 타워 검토 중",
   repairing: "담당 AI 수정 중",
-  final_review: "3역할 최종 검토 중",
+  final_review: "최종 교차 검토 중",
   completed: "전체 완료",
   awaiting_validation: "실행 검증 필요",
   needs_input: "사용자 답변 필요",
@@ -1055,9 +1069,11 @@ function renderWorkflow(run) {
   $("#work-usage-panels").replaceChildren(...Object.entries(usage?.byPanel ?? {}).map(([id, row]) => {
     const item = document.createElement("li");
     const team = run.options.team?.find((agent) => agent.id === id);
-    const label = team ? `${AI_NAMES[team.provider]} · ${team.roles.map((role) => CAPABILITIES[role]).join(" / ")}` : id;
+    const source=row.lastProvider??run.options.runtimeRoutes?.[id]?.provider??team?.provider;
+    const label = team ? `${AI_NAMES[source]} · ${team.roles.map((role) => CAPABILITIES[role]).join(" / ")}` : id;
     const tokens = row.measured ? `입력 ${row.input.toLocaleString()} · 출력 ${row.output.toLocaleString()} (${row.measured}/${row.calls}건 집계)` : "토큰 조회 미지원";
-    item.textContent = `${label} · ${row.calls}회 · ${tokens} · 누적 ${((row.elapsedMs ?? 0) / 1000).toFixed(1)}초` + (row.estimatedUsd === undefined ? "" : ` · 추정 $${row.estimatedUsd.toFixed(4)}`);
+    const providers=Object.entries(row.providers??{}).map(([provider,calls])=>`${AI_NAMES[provider]} ${calls}회`).join(" → ");
+    item.textContent = `${label} · ${row.calls}회 · ${tokens} · 누적 ${((row.elapsedMs ?? 0) / 1000).toFixed(1)}초` + (row.estimatedUsd === undefined ? "" : ` · 추정 $${row.estimatedUsd.toFixed(4)}`) + (providers?` · ${providers}`:"");
     return item;
   }));
   const mutation = $("#mutation-summary");
@@ -1069,7 +1085,6 @@ function renderWorkflow(run) {
     item.textContent = `${finding.status} · ${finding.file}:${finding.line ?? "?"} · ${finding.replacement}`;
     return item;
   }));
-  mascot.update(run, teamConfig ?? roleAssignments ?? undefined);
   renderInspector(run);
   $("#project-state").textContent = run
     ? (RUN_LABELS[run.status] ?? run.status)
@@ -1384,7 +1399,7 @@ function renderUsage(value) {
       provider === "codex"
         ? nativeGpt
         : teamConfig
-          ? !teamConfig.some((agent) => agent.provider === provider)
+          ? ![...teamConfig, ...currentDisplayTeam()].some((agent) => agent.provider === provider)
           : false;
     button.classList.toggle("has-quota", numeric);
     button.title = `5시간 / 주간 · ${data.message}${data.checkedAt ? " · " + new Date(data.checkedAt).toLocaleTimeString("ko-KR") : ""}`;
@@ -1491,12 +1506,14 @@ setInterval(() => {
 }, 10000);
 function renderAssignedRoles() {
   if (usageData) renderUsage(usageData);
-  const selected = ACTIVE_RUN.has(currentRun?.status) || (mission.mode() === "focus" && currentRun?.options?.team)
-    ? (currentRun.options.team ?? defaultTeam(currentRun.options.roles))
-    : teamConfig;
+  const selected = currentDisplayTeam();
   if (!selected) return;
   renderPanelTeam(selected);
-  mascot.update(currentRun, teamConfig ?? selected);
+  const controller=selected[0];
+  if (controller) {
+    $("#gpt-model").hidden=controller.provider!=="gpt"||!!controller.modelId;
+    $("#model-button").textContent=controller.modelId|| (controller.provider!=="gpt"?AI_NAMES[controller.provider]+" 모델 설정":"목록 불러오기 ▾");
+  }
   $("#role-summary").textContent = (teamConfig ?? selected)
     .map(
       (agent, index) =>
@@ -1510,7 +1527,7 @@ function renderAssignedRoles() {
   for (const agent of selected) {
     const ready =
       agent.provider === "gpt"
-        ? connection?.gpt.connected
+        ? connection?.gpt?.connected
         : connection?.[agent.provider]?.connected;
     if (!ACTIVE_RUN.has(currentRun?.status))
       pill("#" + agent.id + "-status", ready ? "연결됨" : "연결 필요", ready);
@@ -1549,8 +1566,7 @@ function renderAssignedRoles() {
   refreshMission();
 }
 function refreshMission() {
-  const team = currentRun?.options?.team && (ACTIVE_RUN.has(currentRun.status) || mission.mode() === "focus")
-    ? currentRun.options.team : teamConfig ?? [];
+  const team = currentDisplayTeam();
   mission.update({
     run: currentRun, team,
     projectId: projectData?.activeId,
@@ -1559,8 +1575,12 @@ function refreshMission() {
     connected: team.length > 0 && team.every((row) => row.provider === "gpt" ? connection?.gpt?.connected : connection?.[row.provider]?.connected),
     delivery: missionDelivery?.runId === currentRun?.id ? missionDelivery : null,
   });
+  desk.update({run:currentRun,team,configuredTeam:teamConfig,connections:connection??{},projectId:projectData?.activeId,conversationId:currentConversation?.id});
+  mascot.update(currentRun,team);
+  if (usageData) renderUsage(usageData);
 }
 function missionAction(target) {
+  if (target === "workflow") return desk.openWorkflow();
   if (target === "design") return openDesign();
   if (target === "project") return $("#new-project").click();
   if (target === "connections") return $("#open-connections").click();
@@ -1573,6 +1593,7 @@ function missionAction(target) {
   }
   if (target === "testing") {
     if (currentRun?.mutation && !currentRun.mutation.passed && !$("#mutation-details").hidden) {
+      desk.openWorkflow();
       $("#mutation-details").open = true;
       $("#mutation-details").scrollIntoView({ block: "center" });
       return;
@@ -1589,10 +1610,12 @@ function missionAction(target) {
       $("#test-report-dialog").showModal();
       return;
     }
+    desk.openWorkflow();
     $(".testing-inspector").scrollIntoView({ block: "center" });
     return;
   }
   view(false);
+  if (target === "controller") { $("#planner-input").focus(); return; }
   const failed = target === "failed-output"
     ? currentRun?.tasks.find((task) => task.status === "failed") ?? currentRun?.tasks.find((task) => task.status === "blocked")
     : null;
@@ -1935,7 +1958,7 @@ function renderConversationPanels(run) {
   for (const actor of SLOT_IDS) {
     const provider =
       AI_NAMES[
-        (run?.options?.team ?? teamConfig)?.find((agent) => agent.id === actor)
+        currentDisplayTeam().find((agent) => agent.id === actor)
           ?.provider
       ] ?? "AI";
     const events =
@@ -2239,10 +2262,10 @@ $("#startup-dialog").addEventListener("cancel", (event) =>
 const tourSteps = [
   ["새 프로젝트", "상단 또는 왼쪽의 새 프로젝트에서 작업 폴더를 선택하세요. 왼쪽에서 프로젝트별 대화를 다시 열 수 있습니다."],
   ["계정 연결과 AI 역할 변경", "계정 연결에서 기존 CLI 연결을 확인하세요. AI 역할 변경에서 컨트롤 타워와 기능 구현, UI, 테스트 담당을 정합니다."],
-  ["컨트롤 타워에서 작업 요청", "가장 위 패널에 원하는 기능을 입력하고 작업 요청을 누르세요. /fun이 요구사항과 완료 기준을 정리해 담당 AI에 전달합니다."],
-  ["테스트와 진행 상황", "각 AI 패널에서 작업 출력을 보고 오른쪽에서 진행 상태를 확인하세요. 뮤테이션 테스트는 기본 테스트가 통과한 뒤 실행됩니다. 검증과 최종 검토가 끝나면 상단에 완료가 표시됩니다."],
+  ["컨트롤 타워에서 작업 요청", "메인 채팅에 원하는 기능을 입력하세요. /fun이 요구사항과 완료 기준을 정리해 담당 AI에 전달합니다. 역할 설정에서 한도 소진 시 대체 AI도 지정할 수 있습니다."],
+  ["AI 대화·작업 기록·알림", "오른쪽 AI 로고를 누르면 해당 AI의 실제 작업 로그와 대화가 열립니다. Workflow 보기에서 테스트·복원·변경 파일을 확인하고, 상단 종 버튼에서 알림을 관리하세요."],
 ];
-const tourTargets = ["#new-project", "#open-roles", "#planner-input", "#inspector-state"];
+const tourTargets = ["#new-project", "#open-roles", "#planner-input", "#desk-agents"];
 let tourStep = 0;
 function showTourStep() {
   document.querySelector(".tour-target")?.classList.remove("tour-target");

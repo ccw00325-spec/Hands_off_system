@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { Store } from "./core/store.js";
+import { NotificationInbox } from "./core/notifications.js";
 import { ChatGPTAuth, PLAN_SCOPE } from "./core/oauth.js";
 import { ImageService } from "./core/images.js";
 import { ClaudeConnection } from "./core/claude.js";
@@ -48,6 +49,8 @@ if (!app.isPackaged) app.setPath("userData", resolve(directory, "../.runtime"));
 // This switch is for local automated tests only and never changes production authentication.
 if (!app.isPackaged && process.env.TOWER_TEST_USER_DATA)
   app.setPath("userData", resolve(process.env.TOWER_TEST_USER_DATA));
+// Chromium storage follows the exact same OS-user/profile boundary as the app store.
+app.setPath("sessionData", app.getPath("userData"));
 if (app.isPackaged) {
   for (const name of ["no-sandbox", "disable-web-security", "allow-running-insecure-content", "remote-debugging-port", "remote-debugging-pipe"])
     app.commandLine.removeSwitch(name);
@@ -409,6 +412,12 @@ else {
       );
       session.defaultSession.setPermissionCheckHandler(() => false);
       handle("tower:status", status);
+      const inbox = new NotificationInbox(store);
+      handle("tower:notifications", () => inbox.list());
+      handle("tower:add-notification", (value) => inbox.add(value));
+      handle("tower:remove-notification", (id) => inbox.remove(id));
+      handle("tower:clear-notifications", () => inbox.clear());
+      handle("tower:read-notifications", () => inbox.markRead());
       handle("tower:restore-connections", restoreConnections);
       handle("tower:activity", async () => {
         await persistentSession.touch();
