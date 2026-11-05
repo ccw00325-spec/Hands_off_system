@@ -59,9 +59,10 @@ async function probe(name, connection, provider, options) {
   }
 }
 await probe("claude", claude, new ClaudeProvider(claude), {});
+let cursorState;
 try {
-  const state = await cursor.status();
-  if (state.connected) {
+  cursorState = await cursor.status();
+  if (cursorState.connected) {
     const catalog = await cursor.models();
     const model = catalog[0];
     if (!model) throw new Error("No Grok model in current Cursor account");
@@ -72,6 +73,8 @@ try {
   } else await probe("grok-via-cursor", cursor, grok, {});
 } catch (error) {
   report.agents["grok-via-cursor"] = {
+    installed: cursorState?.installed,
+    connected: cursorState?.connected,
     inferencePassed: false,
     error: error.message,
   };

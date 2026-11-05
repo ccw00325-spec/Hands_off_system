@@ -6,6 +6,7 @@ import {
 import { fillPreferences, readPreferences } from "./settings-view.js";
 import { quotaWindows } from "../core/quota-view.js";
 import { createMascot } from "./mascot.js";
+import { createMission } from "./mission-view.js";
 import { CAPABILITIES, SLOT_IDS, defaultTeam } from "../core/team.js";
 import {
   renderTeamEditor,
@@ -18,6 +19,7 @@ import {
 } from "./workbench.js";
 const $ = (selector) => document.querySelector(selector);
 const mascot = createMascot($("#mascot-stage"));
+const mission = createMission({ onAction: missionAction, onMode: () => renderAssignedRoles() });
 const api = window.tower;
 let projectData,
   connection,
@@ -25,9 +27,11 @@ let projectData,
   resultImage = null,
   toastTimer;
 let generationProject = null;
+let missionDelivery = null;
 let folderTicket = null,
   linkedFolder = null,
   currentRun = null;
+  missionDelivery = null;
 const ACTIVE_RUN = new Set([
   "planning",
   "awaiting_design",
@@ -557,6 +561,7 @@ function view(images) {
   $("#tab-images").setAttribute("aria-selected", String(images));
   $("#sidebar-images").setAttribute("aria-pressed", String(images));
   renderDesignDelivery();
+  mission.redraw();
 }
 function renderDesignDelivery() {
   const ready = currentRun?.status === "awaiting_design" && currentRun.design?.status === "ready";
@@ -906,6 +911,7 @@ function updateReadiness() {
         : "Enter로 작업 요청 · 실행 권한과 자동 수정은 우측 상단 설정에서 관리합니다.";
   $("#generate-image").disabled =
     !imageKeyReady() || !linkedFolder || generationProject !== null;
+  refreshMission();
 }
 async function refreshWorkspace() {
   if (!projectData) return;
@@ -1485,7 +1491,7 @@ setInterval(() => {
 }, 10000);
 function renderAssignedRoles() {
   if (usageData) renderUsage(usageData);
-  const selected = ACTIVE_RUN.has(currentRun?.status)
+  const selected = ACTIVE_RUN.has(currentRun?.status) || (mission.mode() === "focus" && currentRun?.options?.team)
     ? (currentRun.options.team ?? defaultTeam(currentRun.options.roles))
     : teamConfig;
   if (!selected) return;
@@ -1540,6 +1546,61 @@ function renderAssignedRoles() {
         ? "Codex CLI 기본 모델"
         : AI_NAMES[provider] + " 모델 선택 필요");
   }
+  refreshMission();
+}
+function refreshMission() {
+  const team = currentRun?.options?.team && (ACTIVE_RUN.has(currentRun.status) || mission.mode() === "focus")
+    ? currentRun.options.team : teamConfig ?? [];
+  mission.update({
+    run: currentRun, team,
+    projectId: projectData?.activeId,
+    conversationId: currentConversation?.id,
+    linked: Boolean(linkedFolder),
+    connected: team.length > 0 && team.every((row) => row.provider === "gpt" ? connection?.gpt?.connected : connection?.[row.provider]?.connected),
+    delivery: missionDelivery?.runId === currentRun?.id ? missionDelivery : null,
+  });
+}
+function missionAction(target) {
+  if (target === "design") return openDesign();
+  if (target === "project") return $("#new-project").click();
+  if (target === "connections") return $("#open-connections").click();
+  if (target === "roles") return $("#open-roles").click();
+  if (target === "settings") return $("#open-settings").click();
+  if (target === "checkpoints") return $("#open-checkpoints").click();
+  if (target === "delivery") {
+    if (missionDelivery?.pending) return showReleaseApproval(missionDelivery.pending);
+    return $("#open-services").click();
+  }
+  if (target === "testing") {
+    if (currentRun?.mutation && !currentRun.mutation.passed && !$("#mutation-details").hidden) {
+      $("#mutation-details").open = true;
+      $("#mutation-details").scrollIntoView({ block: "center" });
+      return;
+    }
+    if (!$("#show-test-report").hidden) return $("#show-test-report").click();
+    if (currentRun?.validation) {
+      const result = currentRun.validation;
+      $("#test-report-content").textContent = [
+        result.stale ? "이전 검증 결과 · 현재 파일에서 다시 실행해야 합니다." : result.summary,
+        "실행 명령 · " + (result.command ?? "실행되지 않음"),
+        "종료 코드 · " + (result.exitCode ?? "없음"),
+        result.output ?? "저장된 실행 출력이 없습니다.",
+      ].join("\n\n");
+      $("#test-report-dialog").showModal();
+      return;
+    }
+    $(".testing-inspector").scrollIntoView({ block: "center" });
+    return;
+  }
+  view(false);
+  const failed = target === "failed-output"
+    ? currentRun?.tasks.find((task) => task.status === "failed") ?? currentRun?.tasks.find((task) => task.status === "blocked")
+    : null;
+  const actor = failed?.owner ?? (target === "output"
+    ? currentRun?.tasks.find((task) => task.status === "working")?.owner ?? "gpt"
+    : "gpt");
+  mission.select(actor, failed?.id);
+  if (target === "controller") $("#planner-input").focus();
 }
 async function openRoles(role = "gpt") {
   if (!projectData) return;
@@ -2225,6 +2286,8 @@ $("#open-guide").addEventListener("click", () =>
 );
 $("#close-guide").addEventListener("click", () => $("#guide-dialog").close());
 function renderDelivery(result) {
+  missionDelivery = result;
+  refreshMission();
   $("#services-result").textContent = result
     ? ["로컬 작업 완료", ({ github: "GitHub 실패", vercel: "Vercel 실패", snapshot: "릴리스 준비 실패" })[result.failedService], result.message, result.github?.url, result.vercel?.url]
         .filter(Boolean)

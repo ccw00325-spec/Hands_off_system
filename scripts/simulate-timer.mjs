@@ -174,7 +174,7 @@ try {
     request:
       request +
       (qaEnabled
-        ? " This run has the test role on panel gpt. Plan a dedicated kind:test task after implementation, with testPlan covering every requirement and exact case IDs in node:test names. Use meaningful Node unit/integration assertions for core and static HTML contracts only. Browser UI interactions are separately tested by the host; do not call static HTML checks e2e. Declare only tests/*.test.cjs as test code files. Never alter checks.cjs or app files from a test task. Include reproducible steps and expected outcomes for each case. No dependencies or package installation."
+        ? " This run has the test role on panel gpt. Plan a dedicated kind:test task after implementation, with testPlan covering every requirement and exact case IDs in node:test names. Author tests from the implementation snapshot. For HTML static contracts, inspect the exact emitted markup, prefer clear tag or attribute checks, and carefully validate every regex escaping level. Keep core tests behavioral and deterministic with injectable now. A malformed test is a test-author defect, so review your assertions against the real generated source before submitting. Use meaningful Node unit/integration assertions for core and static HTML contracts only. Browser UI interactions are separately tested by the host; do not call static HTML checks e2e. Declare only tests/*.test.cjs as test code files. Never alter checks.cjs or app files from a test task. Include reproducible steps and expected outcomes for each case. No dependencies or package installation."
         : ""),
     gptSource: "codex",
     gptModel: model.id,

@@ -128,7 +128,7 @@ try {
       return { canceled: true, filePaths: [] };
     };
   });
-  await page.locator("#new-project").click();
+  await page.locator("#mission-primary").filter({ hasText: "새 프로젝트" }).click();
   assert.equal(
     (await page.evaluate(() => window.tower.projects())).value.items.length,
     original,
@@ -259,6 +259,7 @@ try {
   assert.equal(await page.locator("main>.folderbar").count(), 0);
   assert.equal(await page.locator(".planner .run-controls").count(), 0);
   assert.equal(await page.locator(".project-sidebar>h2").count(), 0);
+  await page.locator("#mission-view-all").click();
   const panelOrder = await page.evaluate(() => ({
     worker: document.querySelector(".workers").getBoundingClientRect().top,
     controller: document.querySelector(".planner").getBoundingClientRect().top,
@@ -280,6 +281,7 @@ try {
   checks.push(
     "Control tower is first and largest, then downward dispatch and workers; central execution fields remain in settings",
   );
+  await page.locator("#mission-view-focus").click();
   await application.evaluate(
     (_electron, url) => {
       const p = process.getBuiltinModule("url").fileURLToPath(url),
@@ -539,11 +541,15 @@ try {
   });
   await page.locator("#start-workflow").click();
   await page.locator("#design-approval-status").filter({ hasText: "이대로 적용" }).waitFor();
+  assert.equal(await page.locator('[data-node="design"]').getAttribute("data-state"), "waiting");
+  assert.equal(await page.locator('[data-node="complete"]').getAttribute("data-state"), "idle");
+  assert.equal(await page.locator("[data-task]").count(), 3);
+  await page.locator("#mission-primary").filter({ hasText: "UI 시안 열기" }).waitFor();
   await page.locator("#design-delivery").filter({ hasText: "UI를 확인해보세요!" }).waitFor();
   await page.waitForFunction(() => window.__deliveries.some((entry) => entry.from === "gpt" && entry.to === "design"));
   await page.screenshot({ path: join(artifacts, "design-delivery.png") });
   assert.equal((await page.evaluate((id) => window.tower.workflow(id), projectId)).value.tasks.every((task) => task.status === "pending"), true);
-  await page.locator("#open-run-design").click();
+  await page.locator('[data-node="design"]').click();
   await page.locator("#generated-image").waitFor();
   const draft = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
   await page.locator("#back-to-controller").click();
@@ -584,6 +590,21 @@ try {
     .value;
   assert.equal(run.round, 1);
   assert.equal(run.validation.passed, true);
+  await page.locator('[data-node="complete"][data-state="done"]').waitFor();
+  await page.locator('[data-task="logic"]').click();
+  assert.equal(await page.locator('body').getAttribute("data-mission-panel"), "grok");
+  await page.locator("#mission-task").filter({ hasText: "counter.cjs" }).waitFor();
+  assert.equal(await page.locator(".planner").isVisible(), false);
+  assert.equal(await page.locator('[data-agent-panel="grok"]').isVisible(), true);
+  await page.locator("#mission-tabs [data-actor=gpt]").click();
+  await page.locator("#mission-expand").click();
+  assert.equal(await page.locator("#mission-graph").isVisible(), false);
+  await page.locator("#mission-expand").click();
+  await page.locator("#mission-graph").waitFor();
+  await page.locator("#mission-primary").click();
+  await page.locator("#test-report-dialog[open]").waitFor();
+  await page.locator("#close-test-report").click();
+  checks.push("Mission graph follows real run states; task nodes select the original AI output and completion opens actual validation");
   assert.equal(run.mutation.counts.Killed, 1);
   assert.match(await page.locator("#mutation-summary").innerText(), /1개 탐지/);
   checks.push("Standalone mutation option runs only after green baseline and renders its result in the inspector");
@@ -641,6 +662,7 @@ try {
   const firstConversation = await page
     .locator(".conversation-row.selected")
     .getAttribute("data-conversation");
+  await page.locator("#mission-view-all").click();
   await page.locator("#grok-input").fill("Explain this counter");
   await page.locator("#grok-input").press("Enter");
   await page
@@ -756,6 +778,9 @@ try {
   await page.locator("#sidebar-file-search").fill("");
   await page.locator(".conversation-row.selected").waitFor();
   checks.push("Left sidebar searches conversations rather than files");
+  await page.locator("#mission-view-focus").click();
+  await page.locator("#mission-tabs [data-actor=gpt]").click();
+  await page.locator("#mission-view-all").click();
   await page.locator("#open-settings").click();
   await page.locator("#max-repair-rounds").fill("4");
   await page.locator("#save-settings").click();
@@ -809,6 +834,15 @@ try {
       scroll: document.documentElement.scrollWidth,
     }));
     assert.ok(sizes.scroll <= sizes.width, "overflow at " + width);
+    await page.locator("#mission-view-focus").click();
+    await page.locator("#mission-graph").waitFor();
+    assert.ok(await page.locator("#mission-edges path").count() > 0);
+    const flow = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+    }));
+    assert.ok(flow.scroll <= flow.width, "mission flow overflow at " + width);
+    await page.locator("#mission-view-all").click();
   }
   checks.push(
     "No horizontal overflow across 320,375,414,768,900,1440,1920px; large panels scroll vertically",
@@ -816,6 +850,7 @@ try {
   assert.deepEqual(errors, []);
   await application.close();
   page = await boot();
+  await page.locator("#mission-view-all").click();
   assert.equal(
     await page.locator("#settings-dialog").evaluate((node) => node.open),
     false,
@@ -846,6 +881,9 @@ try {
   const afterRollback = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
   assert.equal(afterRollback.status, "awaiting_validation");
   assert.equal(afterRollback.validation.stale, true);
+  await page.locator("#mission-view-focus").click();
+  assert.equal(await page.locator('[data-node="complete"]').getAttribute("data-state"), "idle");
+  assert.equal(await page.locator('[data-node="testing"]').getAttribute("data-state"), "error");
   checks.push("Stable checkpoint card opens a safe preview and actual UI rollback invalidates prior verification");
   const disposable = await page.evaluate((id) => window.tower.createConversation(id), projectId);
   await page.locator("#open-history").click();

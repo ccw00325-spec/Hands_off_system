@@ -95,6 +95,18 @@ export function createMascot(stage) {
     courierQueue = [],
     delivering = false;
   const courier = document.querySelector("#courier");
+  function anchor(actor) {
+    const focused = document.body.dataset.missionMode === "focus";
+    if (focused && actor === "gpt") return document.querySelector("#mission-controller");
+    if (focused) {
+      const nodes = [...document.querySelectorAll("#mission-graph [data-actor]")].filter((node) => node.dataset.actor === actor && node.getClientRects().length);
+      const task = nodes.find((node) => node.dataset.state === "active") ?? nodes[0];
+      if (task) return task;
+    }
+    return actor === "gpt"
+      ? document.querySelector(".planner .panel-heading")
+      : document.querySelector(`[data-agent-panel="${actor}"] .panel-heading`);
+  }
   async function deliver() {
     if (
       delivering ||
@@ -106,12 +118,7 @@ export function createMascot(stage) {
       return;
     delivering = true;
     const event = courierQueue.shift();
-    const source =
-      event.from === "gpt"
-        ? document.querySelector(".planner .panel-heading")
-        : document.querySelector(
-            `[data-agent-panel="${event.from}"] .panel-heading`,
-          );
+    const source = anchor(event.from);
     const target =
       event.to === "design"
         ? ["#sidebar-images", "#tab-images"].map((selector) => document.querySelector(selector))
@@ -119,11 +126,7 @@ export function createMascot(stage) {
             const rect = button?.getBoundingClientRect();
             return rect?.width && rect.top >= 0 && rect.bottom <= window.innerHeight;
           })
-        : event.to === "gpt"
-        ? document.querySelector(".planner .panel-heading")
-        : document.querySelector(
-            `[data-agent-panel="${event.to}"] .panel-heading`,
-          );
+        : anchor(event.to);
     if (!source || !target || !source.getClientRects().length) {
       delivering = false;
       void deliver();

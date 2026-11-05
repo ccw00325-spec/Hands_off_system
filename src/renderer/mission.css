@@ -1,0 +1,391 @@
+/* Hallmark · established mint palette · P5 H5 E4 S5 R5 V4 */
+:root {
+  --mission-design: #c4a7eb;
+  --mission-design-bg: #221c2c;
+  --mission-glow: #9ce4c729;
+  --mission-design-glow: #c4a7eb29;
+  --mission-grid: #727f8b0b;
+}
+.mission-controller {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 17px 20px;
+  border: 1px solid var(--mint);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 0 20px var(--mission-glow);
+  min-width: 0;
+}
+.mission-controller > img {
+  flex: 0 0 46px;
+  object-fit: contain;
+}
+.mission-controller-copy {
+  flex: 1;
+  min-width: 0;
+}
+.mission-controller h2 {
+  font-size: 16px;
+  margin: 0 0 5px;
+}
+.mission-controller h2 span {
+  display: inline-block;
+  color: var(--mission-design);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  margin-left: 8px;
+}
+.mission-controller p {
+  font-size: 13px;
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.mission-controller > button {
+  flex-shrink: 0;
+}
+.mission-flow {
+  min-width: 0;
+}
+.mission-flow-heading,
+.mission-output-heading > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0;
+}
+.mission-flow-heading > div:first-child {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+.mission-flow-heading .hint {
+  font-size: 10px;
+}
+.mission-view-controls {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.mission-view-controls button,
+.mission-tabs button {
+  min-height: 34px;
+  font-size: 11px;
+  background: var(--surface);
+}
+.mission-view-controls [aria-pressed="true"],
+.mission-tabs [aria-pressed="true"] {
+  color: var(--mint);
+  border-color: var(--mint);
+  background: var(--mint-bg);
+}
+.mission-graph {
+  position: relative;
+  border: 1px solid var(--subtle-border);
+  border-radius: 14px;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--mission-grid) 1px, transparent 1px);
+  background-size: 18px 18px;
+  padding: 16px;
+  min-width: 0;
+}
+#mission-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#mission-edges path {
+  stroke: var(--border);
+  fill: none;
+  stroke-width: 1.5;
+}
+#mission-edges polygon {
+  fill: var(--muted);
+}
+#mission-edges .edge-reported {
+  stroke: var(--mint);
+  opacity: 0.55;
+}
+.mission-nodes {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.mission-phase-row {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+.mission-phase-row > .mission-node {
+  flex: 1;
+  min-width: 0;
+  max-width: 270px;
+}
+.mission-controller h2,
+.mission-controller p {
+  overflow-wrap: anywhere;
+}
+.mission-node {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  text-align: left;
+  width: min(100%, 320px);
+  min-height: 46px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  white-space: normal;
+}
+.mission-node-title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.mission-node small {
+  grid-column: 1;
+  font-size: 10px;
+  color: var(--muted);
+}
+.mission-node-state {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mission-node[data-state="active"] {
+  border-color: var(--mint);
+  box-shadow: 0 0 14px var(--mission-glow);
+}
+.mission-node[data-state="done"],
+.mission-node[data-state="reported"] {
+  border-color: var(--mint);
+}
+.mission-node[data-state="done"] .mission-node-state,
+.mission-node[data-state="reported"] .mission-node-state {
+  color: var(--mint);
+}
+.mission-node[data-state="waiting"] {
+  border-color: var(--warning);
+}
+.mission-node[data-state="waiting"] .mission-node-state {
+  color: var(--warning);
+}
+.mission-node[data-node="design"][data-state="waiting"] {
+  border-color: var(--mission-design);
+  background: var(--mission-design-bg);
+  box-shadow: 0 0 16px var(--mission-design-glow);
+}
+.mission-node[data-state="error"] {
+  border-color: var(--error);
+}
+.mission-node[data-state="error"] .mission-node-state {
+  color: var(--error);
+}
+.mission-node[aria-pressed="true"] {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.mission-task-nodes {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.mission-task-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+}
+.mission-task-row > .mission-node {
+  width: min(100%, 270px);
+}
+.mission-output-heading {
+  scroll-margin-top: 12px;
+  min-width: 0;
+}
+.mission-output-heading h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.mission-output-heading > header > button {
+  font-size: 11px;
+  min-height: 34px;
+}
+.mission-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mission-tabs button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mission-next {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 15px;
+  margin: 14px 0;
+  background: var(--surface);
+}
+.mission-next[data-state="waiting"] {
+  border-color: var(--warning);
+}
+.mission-next[data-state="done"] {
+  border-color: var(--mint);
+}
+.mission-next h2 {
+  margin: 10px 0;
+  font-size: 15px;
+}
+.mission-next p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mission-next button {
+  width: 100%;
+  font-size: 12px;
+  margin-top: 8px;
+  white-space: normal;
+}
+.mission-task-detail {
+  border: 1px solid var(--mission-design);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.mission-task-detail p {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.mission-task-detail > strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+body[data-mission-mode="focus"] .dispatch {
+  display: none;
+}
+body[data-mission-mode="focus"] .workers {
+  display: block;
+}
+body[data-mission-mode="focus"] .worker,
+body[data-mission-mode="focus"] .planner {
+  height: 570px;
+  min-height: 500px;
+}
+body[data-mission-mode="focus"][data-mission-panel="gpt"] .workers {
+  display: none;
+}
+body[data-mission-mode="focus"]:not([data-mission-panel="gpt"]) .planner {
+  display: none;
+}
+body[data-mission-mode="focus"] .worker:not([data-mission-selected="true"]) {
+  display: none;
+}
+body[data-mission-mode="all"] .mission-graph,
+body[data-mission-mode="all"] #mission-tabs,
+body[data-mission-mode="all"] #mission-expand {
+  display: none;
+}
+body[data-output-expanded="true"] #mission-graph {
+  display: none;
+}
+body[data-output-expanded="true"] .planner,
+body[data-output-expanded="true"] .worker {
+  height: max(650px, calc(100vh - 250px));
+}
+.mission-node:focus-visible,
+.mission-tabs button:focus-visible,
+.mission-view-controls button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .mission-node:hover {
+    background: var(--raised);
+    border-color: var(--focus);
+  }
+}
+.mission-node:active {
+  background: var(--mint-bg);
+}
+@media (max-width: 1100px) {
+  .mission-controller {
+    padding: 14px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .mission-controller > button {
+    margin-left: auto;
+  }
+  .mission-flow-heading {
+    flex-wrap: wrap;
+  }
+  .mission-flow-heading > div:first-child {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 767px) {
+  .mission-controller h2 {
+    font-size: 14px;
+  }
+  .mission-controller p {
+    font-size: 12px;
+  }
+  .mission-graph {
+    padding: 16px 10px;
+  }
+  .mission-task-row > .mission-node {
+    width: 100%;
+    max-width: 320px;
+  }
+  .mission-phase-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .mission-phase-row > .mission-node {
+    flex: auto;
+    width: 100%;
+    max-width: 320px;
+  }
+  .mission-node {
+    min-height: 52px;
+  }
+  .mission-tabs button,
+  .mission-view-controls button {
+    min-height: 44px;
+  }
+  .mission-task-event {
+    max-height: 160px;
+    overflow-y: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mission-node,
+  .mission-controller {
+    transition: none;
+  }
+}
