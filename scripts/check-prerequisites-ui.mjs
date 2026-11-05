@@ -21,7 +21,8 @@ try{
     {id:'gemini',label:'Gemini CLI',required:false,state:'missing',purpose:'선택 사항 · 이 AI를 사용할 때 설치'},
    ]};
   };
-  require(path.replace('prerequisites.js','browser.js')).BrowserOpener.prototype.open=async url=>{globalThis.__sites.push(url);return true;};
+  const Browser=require(path.replace('prerequisites.js','browser.js')).BrowserOpener,open=Browser.prototype.open;
+  Browser.prototype.open=async function(url){this.openDefault=async safe=>{globalThis.__sites.push(safe);return true;};return open.call(this,url);};
   for(const [file,name]of[['codex','CodexConnection'],['claude','ClaudeConnection'],['cursor','CursorConnection'],['gemini','GeminiConnection']])require(path.replace('prerequisites.js',file+'.js'))[name].prototype.status=async()=>({installed:false,connected:false,login:{waiting:false}});
   const show=dialog.showMessageBox;dialog.showMessageBox=(...args)=>args.at(-1)?.title==='현재 PC에서 실행'?Promise.resolve({response:globalThis.__hostApproved?1:0}):show(...args);
  },pathToFileURL(resolve('src/core/prerequisites.js')).href);

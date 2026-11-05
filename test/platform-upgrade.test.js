@@ -4,11 +4,12 @@ import { CallQuota, reserveTextCost } from '../src/core/call-quota.js';
 import { stateHandoff } from '../src/core/handoff.js';
 import { layoutPreview } from '../src/core/layout-preview.js';
 import { Prerequisites, INSTALL_SITES } from '../src/core/prerequisites.js';
-import { toolRoots } from '../src/core/tool-paths.js';
+import { toolRoots, nativeToolPath } from '../src/core/tool-paths.js';
 import { dockerArgs, validateInDocker } from '../src/core/docker-execution.js';
 import { macLoginScript } from '../src/core/mac-terminal.js';
 import { DEFAULT_PREFERENCES } from '../src/core/preferences.js';
 import { GPTProvider } from '../src/core/providers.js';
+import { officialExternalURL } from '../src/core/browser.js';
 import { resolve } from 'node:path';
 
 const memory = () => { let value = null; return {read:async()=>structuredClone(value), write:async(_key,next)=>{await new Promise(r=>setTimeout(r,1));value=structuredClone(next);}}; };
@@ -75,10 +76,14 @@ test('missing optional AI CLIs do not require installing all providers', async (
   assert.equal(result.rows.find(row=>row.id==='claude').required,false);
   assert.equal(result.rows.find(row=>row.id==='node').state,'missing');
   assert.ok(Object.values(INSTALL_SITES).every(url=>new URL(url).protocol==='https:'));
+  for(const url of Object.values(INSTALL_SITES))assert.equal(officialExternalURL(url),url);
+  assert.throws(()=>officialExternalURL('https://nodejs.org.attacker.example/download'));
 });
 test('macOS Finder paths include Homebrew and the native user CLI location', async () => {
   const paths = await toolRoots('agent',{platform:'darwin',env:{PATH:''},home:'/Users/fixture'});
   assert.ok(paths.includes('/opt/homebrew/bin'));assert.ok(paths.includes('/usr/local/bin'));assert.ok(paths.includes('/Users/fixture/.local/bin'));
+  const environment = nativeToolPath({PATH:'/usr/bin:/bin'},'darwin','/Users/fixture');
+  assert.ok(environment.includes('/opt/homebrew/bin'));assert.ok(environment.includes('/usr/local/bin'));
 });
 test('Docker receives only a read-only sanitized input mount and strict resource/network restrictions', () => {
   const args = dockerArgs({name:'cw-test-00000000-0000-0000-0000-000000000000',image:'node:24-bookworm-slim',input:resolve('artifacts/input'),command:['node','--test']});

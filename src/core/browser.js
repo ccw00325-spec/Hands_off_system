@@ -2,7 +2,12 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { nativeEnvironment } from "./child-env.js";
+import { homedir } from 'node:os';
 const EXTERNAL_HOSTS = new Set([
+  'nodejs.org',
+  'git-scm.com',
+  'docs.docker.com',
+  'developers.openai.com',
   "auth.openai.com",
   "platform.openai.com",
   "chatgpt.com",
@@ -46,6 +51,13 @@ export class BrowserOpener {
     this.openDefault = openDefault;
   }
   async chromePath() {
+    if (process.platform === 'darwin') {
+      for (const root of ['/Applications', join(homedir(), 'Applications')]) {
+        const path = join(root, 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome');
+        if (await access(path).then(() => true, () => false)) return path;
+      }
+      return null;
+    }
     if (process.platform !== "win32") return null;
     const paths = [
       process.env.PROGRAMFILES,
