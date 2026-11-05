@@ -345,7 +345,7 @@ export class Workflow {
       const handoff = stateHandoff(state, actor, action, context);
       if (!run.ephemeral && state.id && state.grantId) {
         const sequence = (run.handoffSequence = (run.handoffSequence ?? 0) + 1);
-        await this.workspace.write(state.projectId, `.control-tower/runs/${state.id}/handoffs/${sequence}-${actor}.json`, JSON.stringify(handoff, null, 2), {internal:true, grantId:state.grantId, newOnly:true});
+        await this.workspace.write(state.projectId, `.control-tower/runs/${state.id}/handoffs/${sequence}-${actor}-${randomUUID()}.json`, JSON.stringify(handoff, null, 2), {internal:true, grantId:state.grantId, newOnly:true});
       }
       const payload = {
         ...redactData(rest), handoff, signal, designImage,
@@ -1003,6 +1003,11 @@ export class Workflow {
       };
       this.runs.set(projectId, run);
       state.options.allowExecution = options.allowExecution === true;
+      // Revalidation must honor the current execution boundary, including old
+      // sessions created before Docker became the default. Other work settings
+      // remain frozen for reproducibility.
+      if (options.executionBackend) state.options.executionBackend = options.executionBackend;
+      if (options.dockerImage) state.options.dockerImage = options.dockerImage;
       state.status = "validating";
       state.testing.status = state.options.allowExecution
         ? "running"

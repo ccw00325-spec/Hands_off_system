@@ -4,6 +4,10 @@ import { randomUUID } from 'node:crypto';
 // and cost reservation are serialized before any billable provider request.
 export class CallQuota {
   constructor(store, now = () => new Date()) { this.store = store; this.now = now; this.queue = Promise.resolve(); }
+  async policy(options) {
+    const current = await this.store.read('preferences', {});
+    return {...options, ...Object.fromEntries(['maxDailyCalls','dailyApiBudgetUsd','maxImageCallsPerDay'].filter(key => typeof current?.[key] === 'number').map(key=>[key,current[key]]))};
+  }
   transaction(operation) {
     const next = this.queue.catch(() => {}).then(async () => {
       const day = this.now().toISOString().slice(0, 10);
@@ -16,7 +20,8 @@ export class CallQuota {
     this.queue = next; return next;
   }
   admit({ runId, options, image = false, reserveUsd = 0 }) {
-    return this.transaction(data => {
+    return this.transaction(async data => {
+      options = await this.policy(options);
       const run = data.runs[runId] ??= { calls: 0, usd: 0 };
       if (data.calls >= (options.maxDailyCalls ?? 300) || run.calls >= (options.maxAgentCalls ?? 120)) throw Object.assign(new Error('호출 한도에 도달했습니다. 설정에서 작업·일일 한도를 확인하고 변경을 승인한 뒤 다시 시작하세요.'), { code: 'APP_QUOTA' });
       if (image && data.images >= (options.maxImageCallsPerDay ?? 5)) throw Object.assign(new Error('오늘 이미지 생성 횟수를 모두 사용했습니다. 설정에서 한도를 확인하세요.'), { code: 'APP_QUOTA' });
@@ -40,7 +45,9 @@ export class CallQuota {
     });
   }
   reserve(ticket, amount, options) {
-    return this.transaction(data => {
+    return this.transaction(async data => {
+      options = await this.policy(options);
+      if (amount === null && !(options.apiBudgetUsd > 0 || options.dailyApiBudgetUsd > 0)) amount = 0;
       const current = data.reservations[ticket.id];
       if (data.day !== ticket.day || !current) throw new Error('호출 예약이 만료되었습니다. 다시 요청하세요.');
       const difference = amount - current.usd, run = data.runs[current.runId];
@@ -52,8 +59,10 @@ export class CallQuota {
 }
 
 export function reserveTextCost(instructions, payload, options) {
-  if (!(options.apiBudgetUsd > 0 || options.dailyApiBudgetUsd > 0)) return 0;
-  if (options.gptModel !== options.apiRateModel || !(options.apiInputRate > 0 || options.apiOutputRate > 0) || payload.designImage) throw new Error('API 예산을 적용하려면 현재 텍스트 모델의 단가가 필요합니다. 이미지 입력 비용은 이 예산으로 확인할 수 없습니다.');
+  if (options.gptModel !== options.apiRateModel || !(options.apiInputRate > 0 || options.apiOutputRate > 0) || payload.designImage) {
+    if (!(options.apiBudgetUsd > 0 || options.dailyApiBudgetUsd > 0)) return null;
+    throw new Error('API 예산을 적용하려면 현재 텍스트 모델의 단가가 필요합니다. 이미지 입력 비용은 이 예산으로 확인할 수 없습니다.');
+  }
   // Conservative admission estimate, not a claim about exact vendor billing.
   const bytes = Buffer.byteLength(instructions + JSON.stringify(payload), 'utf8');
   return (bytes * options.apiInputRate + (options.maxOutputTokens ?? 16384) * options.apiOutputRate) / 1_000_000;

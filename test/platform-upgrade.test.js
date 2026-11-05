@@ -10,6 +10,7 @@ import { macLoginScript } from '../src/core/mac-terminal.js';
 import { DEFAULT_PREFERENCES } from '../src/core/preferences.js';
 import { GPTProvider } from '../src/core/providers.js';
 import { officialExternalURL } from '../src/core/browser.js';
+import { Workflow } from '../src/core/workflow.js';
 import { resolve } from 'node:path';
 
 const memory = () => { let value = null; return {read:async()=>structuredClone(value), write:async(_key,next)=>{await new Promise(r=>setTimeout(r,1));value=structuredClone(next);}}; };
@@ -29,6 +30,16 @@ test('parallel API reservations cannot each spend the same remaining budget', as
   const successful = result.findIndex(row=>row.status==='fulfilled');
   await quota.settle(tickets[successful],undefined);
   assert.equal((await quota.snapshot()).reservedOrSpentUsd,.7);
+});
+test('daily settings apply to already-running callers and newly enabled unpriced budgets fail closed', async () => {
+  const data=new Map(), store={read:async name=>structuredClone(data.get(name)??{}),write:async(name,value)=>data.set(name,structuredClone(value))};
+  const quota=new CallQuota(store), frozen={maxDailyCalls:10,maxAgentCalls:10,dailyApiBudgetUsd:0};
+  const ticket=await quota.admit({runId:'running',options:frozen});
+  data.set('preferences',{maxDailyCalls:1,dailyApiBudgetUsd:1});
+  await assert.rejects(quota.admit({runId:'running',options:frozen}),/호출 한도/);
+  await assert.rejects(quota.reserve(ticket,null,frozen),/예약 비용/);
+  data.set('preferences',{maxDailyCalls:10,dailyApiBudgetUsd:.1});
+  await assert.rejects(quota.reserve(ticket,.2,frozen),/예약 비용/);
 });
 test('actual usage refunds unused reservation while new-day counters start fresh', async () => {
   let date = new Date('2026-11-06T12:00:00Z');
@@ -64,6 +75,24 @@ test('handoff preserves file hashes, criteria, reports and unresolved findings w
   const handoff = stateHandoff(state,'grok','build',{task:{id:'t1',owner:'grok',acceptanceCriteria:['T1 passes']},snapshot:{hash:'baseline',files:[{path:'a.js',hash:'a1',content:'not copied'}]},issues:[{description:'Fix boundary'}]});
   assert.equal(handoff.source.hash,'baseline'); assert.equal(handoff.completedTasks[0].summary,'Implemented');
   assert.deepEqual(handoff.task.criteria,['T1 passes']); assert.equal(handoff.source.files[0].content,undefined); assert.match(handoff.constraint,/not vendor session/);
+});
+test('recreated runs cannot overwrite or collide with an earlier factual handoff', async () => {
+  const files=new Set(), workspace={write:async(_id,path)=>{assert.ok(!files.has(path),'handoffs must not collide after run reconstruction');files.add(path);}};
+  const provider={chat:async()=>({reply:'ok'})}, workflow=new Workflow(workspace,{gpt:provider});
+  const make=()=>({state:{id:'00000000-0000-0000-0000-000000000001',projectId:'p',grantId:'g',options:{maxAgentCalls:10},events:[],tasks:[]}});
+  const run=make(), context={message:'Progress?',snapshot:{root:'.',files:[]},options:run.state.options,signal:new AbortController().signal};
+  await workflow.callAgent(run,'gpt','chat',context);
+  const reconstructed=make();await workflow.callAgent(reconstructed,'gpt','chat',{...context,options:reconstructed.state.options});
+  assert.equal(files.size,2);
+});
+test('revalidation of a legacy host session uses the current Docker execution boundary', async () => {
+  let backend;
+  const state={id:'run',projectId:'p',grantId:'g',snapshotHash:'same',options:{executionBackend:'host'},testing:{plan:{}},reviews:[],ownership:{}};
+  const workflow=new Workflow({snapshot:async()=>({hash:'same'})},{},()=>{},async context=>{backend=context.options.executionBackend;return{configured:true,passed:false,requiresSetup:true,summary:'Docker required'};});
+  workflow.current=async()=>state;workflow.record=async()=>{};workflow.testingResult=async()=>{};
+  await workflow.revalidate('p','run',{allowExecution:true,executionBackend:'docker',dockerImage:'node:24-bookworm-slim'});
+  await workflow.runs.get('p').promise;
+  assert.equal(backend,'docker');assert.equal(state.options.dockerImage,'node:24-bookworm-slim');
 });
 test('default UI is a text structure and mutation is opt-in; no API is needed to revise layout', () => {
   assert.equal(DEFAULT_PREFERENCES.designMode,'layout'); assert.equal(DEFAULT_PREFERENCES.executionBackend,'docker'); assert.equal(DEFAULT_PREFERENCES.mutationByDefault,false);

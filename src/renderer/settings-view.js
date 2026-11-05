@@ -28,7 +28,7 @@ export function fillPreferences(value) {
   );
   document.body.dataset.wrap = value.wrapLines ? "on" : "off";
   $("#settings-intro").textContent = value.onboardingComplete
-    ? "자동화·권한 변경은 다음 작업에 적용됩니다. 실행 동의를 취소하면 현재 검증도 중지합니다."
+    ? "작업 설정은 다음 작업, 일일 한도는 새 호출부터 적용됩니다. 재검증은 현재 실행 위치를 따릅니다. 실행 동의 취소 시 현재 검증도 중지합니다."
     : "처음 한 번 작업 환경과 실행 권한을 선택하세요. 실행 동의는 선택 사항이며 나중에 바꿀 수 있습니다.";
 }
 export function readPreferences() {
