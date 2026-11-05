@@ -31,8 +31,8 @@ AI마다 같은 요구사항을 다시 설명하고, 한쪽에서 만든 코드�
 
 | 사용할 PC | 저장소 | 앱 다운로드 |
 | --- | --- | --- |
-| Windows x64 | [Windows 저장소](https://github.com/ccw00325-spec/Hands_off_system_window) | [Windows 실행 파일 받기](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42120722946) |
-| MacBook · Apple Silicon / Intel | [Mac 저장소](https://github.com/ccw00325-spec/Hands_off_system_mac) | [Mac 패키지 받기](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42120734957) |
+| Windows x64 | [Windows 저장소](https://github.com/ccw00325-spec/Hands_off_system_window) | [Windows 실행 파일 받기](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42127453459) |
+| MacBook · Apple Silicon / Intel | [Mac 저장소](https://github.com/ccw00325-spec/Hands_off_system_mac) | [Mac 패키지 받기](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42127462897) |
 
 다운로드 페이지에서 GitHub에 로그인하고 아래쪽 **Artifacts**를 펼치세요. Windows는 `Hands-off-Window-x64`, Mac은 CPU에 맞게 `Hands-off-Mac-arm64` 또는 `Hands-off-Mac-x64`를 선택합니다. 받은 압축 파일을 풀고 Windows는 `.exe`, Mac은 `.dmg` 또는 `.zip` 안의 앱을 실행하세요. Mac CPU는 **Apple 메뉴 → 이 Mac에 관하여**에서 확인할 수 있습니다. 파일 보관 기간은 30일입니다.
 
@@ -234,7 +234,7 @@ UI 작업이 포함되고 시안 승인 설정이 켜져 있으면, 기본적으
 
 **테스트 설계·실행** 역할을 배정하면 요구사항을 실제 테스트 코드와 연결하고 재현 절차를 남깁니다. 실행 권한을 승인한 폴더에서는 Node 내장 테스트나 지정한 npm 스크립트로 결과를 확인합니다. 실패 항목과 담당 AI는 **Workflow 보기**에서 확인합니다. 컨트롤 타워는 **설정 → 자동 수정 최대 횟수** 안에서 수정과 재실행을 요청합니다. 같은 실패가 반복되거나 테스트 자체에 문제가 있다고 판단되면 사용자 확인 상태로 멈춥니다. 실행 권한이 필요하면 대화 위 안내 버튼으로 설정을 엽니다.
 
-- **결과·재현 절차**에서 각 테스트의 결과와 실행 명령을 확인합니다. 필요한 경우 **테스트 다시 실행**을 누릅니다.
+- **결과·재현 절차**에서 각 테스트의 결과와 실행 명령을 확인합니다. 필요한 경우 **테스트 다시 실행**을 누릅니다. 통과하면 새 결과를 AI 검토 담당에게 전달해 순차 검토도 진행합니다.
 - AI 연결이나 구현 도중 중단되면 **문제 작업 출력 보기**로 담당 AI의 로그와 변경 내역을 확인합니다.
 - **체크포인트**에서 복원 지점과 영향을 받을 파일을 미리 봅니다. 사용자가 이후 수정한 파일과 충돌하면 복원을 멈춥니다.
 - 기본 완료 기준은 계획한 일반 테스트 실행과 검토입니다. 패키지를 자동 설치하지 않으며, Node 내장 테스트나 프로젝트의 npm 테스트 스크립트를 사용합니다.
