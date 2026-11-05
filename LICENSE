@@ -1,0 +1,112 @@
+Hands off System Permission License 1.0
+SPDX-License-Identifier: LicenseRef-Hands-off-Permission-1.0
+
+Copyright (c) 2026 Chan Woo Cho (GitHub: ccw00325-spec).
+All rights reserved except for the permissions expressly granted below.
+Permission requests: ccw00325@gmail.com
+
+1. Scope
+
+"Software" means the original Hands off System / CW_Handsoff_sys source code,
+application, project-authored skills and prompts, documentation and artwork
+distributed with this license. "Licensor" means Chan Woo Cho. These conditions
+apply to recipients other than the Licensor and to copies of the Software
+distributed under this license, beginning with version 0.2.3.
+
+Third-party software, provider marks, dependencies and separately licensed
+materials retain their own licenses and are not relicensed by this document.
+This license does not withdraw rights already validly granted under another
+license, restrict statutory rights, or claim ownership of ideas or algorithms.
+
+2. Free non-commercial use
+
+Subject to this license, the Licensor permits you, without charge, to download,
+inspect and run the unmodified Software for personal, educational, evaluation
+or research purposes that are not directed toward commercial advantage or
+financial compensation. You may make backup copies and redistribute unmodified
+copies for those purposes if you include this LICENSE, NOTICE, attribution and
+all applicable third-party notices. You may not charge for those copies.
+
+Installing dependencies, building the unmodified source, mechanically produced
+build artifacts, supported settings, account connections and changes to your
+own workspace files are allowed for the permitted purposes above. These acts
+alone do not require approval. They do not permit editing the Software itself.
+
+3. Changes and derivative development require prior written consent
+
+Except for the activities expressly permitted in section 2, you must obtain
+prior written consent before modifying, adapting, translating, incorporating,
+distributing modified versions of, or creating derivative works from the
+Software, whether or not you intend to earn revenue. This includes changes to
+the Software's code, embedded skills, prompts and original product assets.
+Bug reports and proposed changes described without publishing modified copies
+may be submitted through the repository's issue tracker.
+
+4. Commercial use and monetization require prior written consent
+
+You must obtain prior written consent before commercial use or an attempt to
+monetize the Software or a derivative work. This includes selling or licensing
+it; charging for access, support or a hosted service based on it; advertising-
+funded or subscription offerings; embedding it in commercial products; using
+it to perform paid client work; and use in business operations directed toward
+commercial advantage. A plan to monetize requires approval before that use
+begins, even if no revenue has yet been earned. Non-commercial permission does
+not automatically convert to commercial permission.
+
+5. Model training and fine-tuning require prior written consent
+
+You must obtain prior written consent before using the Software or substantial
+parts of its code, embedded skills, prompts, documentation or original assets
+as training data, fine-tuning data, distillation data or other material for
+training or adapting machine-learning models. This applies to commercial and
+non-commercial training. Ordinary model inference to operate the Software for
+a permitted purpose is not, by itself, training or fine-tuning.
+
+6. Requesting approval
+
+Send a request to ccw00325@gmail.com describing your identity or organization,
+the version or materials involved, intended changes, commercial purpose or
+training purpose, distribution and deployment plans, and proposed attribution.
+Approval must be an explicit written authorization issued by the Licensor,
+such as an affirmative email response from ccw00325@gmail.com or a signed
+agreement. Silence, an issue response unrelated to licensing, a fork, a pull
+request or permission for a different purpose is not approval. Approval covers
+only the scope and conditions stated in that written authorization.
+
+7. Attribution, outputs and repository permissions
+
+Keep the following attribution with copies you are allowed to distribute:
+"Hands off System / CW_Handsoff_sys by Chan Woo Cho (ccw00325-spec)"
+and https://github.com/ccw00325-spec/Hands_off_system.
+Attribution is not a substitute for any required written approval.
+No trademark or endorsement rights are granted.
+
+This license does not claim ownership of your input or independently created
+workspace output merely because the Software processed or generated it.
+Copied portions of the Software remain subject to this license, and commercial
+operation of the Software to produce output still requires section 4 approval.
+
+Nothing here overrides GitHub's applicable terms permitting viewing and forking
+public repositories. Those platform permissions are not general permission for
+commercial use, training or derivative development. Permission to read a public
+repository does not grant write or merge access to the official repository.
+
+8. Reserved rights and termination
+
+No patent license or other right is granted except as expressly stated here.
+Unapproved activities outside this license are not authorized. Permissions
+under this license terminate if you breach its conditions. Reinstatement
+requires the Licensor's written agreement. The Licensor may provide separate
+permissions on different terms. This is a custom source-available license,
+not the Apache License 2.0 or an OSI-approved open-source license.
+
+9. Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. TO THE EXTENT PERMITTED BY LAW, THE LICENSOR IS NOT LIABLE
+FOR CLAIMS, DAMAGES OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+MANDATORY APPLICABLE LEGAL RIGHTS ARE NOT EXCLUDED.
+
+The English text above is the governing license. The Korean usage guide in
+docs/licensing.md explains it but does not expand the permissions granted.

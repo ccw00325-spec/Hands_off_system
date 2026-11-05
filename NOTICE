@@ -1,0 +1,15 @@
+Hands off System / CW_Handsoff_sys
+Copyright (c) 2026 Chan Woo Cho (GitHub: ccw00325-spec)
+https://github.com/ccw00325-spec/Hands_off_system
+Contact and written permission: ccw00325@gmail.com
+
+Original project materials in version 0.2.3 and later are provided under the
+Hands off System Permission License 1.0 in LICENSE. Non-commercial unmodified
+use is free under its conditions. Code changes, derivative development,
+commercial use, monetization, model training and fine-tuning require prior
+written permission. Attribution alone does not grant those permissions.
+
+Third-party components retain their own licenses. Provider icons use Lobe
+Icons under MIT; see src/renderer/assets/providers-NOTICE.txt. Runtime and
+build dependencies retain the notices distributed by their respective owners.
+This project is not endorsed by the AI or hosting providers it connects to.

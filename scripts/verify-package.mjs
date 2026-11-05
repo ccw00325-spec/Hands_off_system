@@ -13,7 +13,7 @@ const assetAllowed = /^(?:src\/renderer\/splash\.html|src\/renderer\/assets\/(?:
 const unwanted = entries.filter((entry) => {
   const path = entry.replaceAll("\\", "/").replace(/^\//, "");
   const linked = Boolean(path && asar.statFile(archive, path.split("/").join(sep), false).link);
-  return linked || (!allowed.test(path) && !assetAllowed.test(path)) ||
+  return linked || (!allowed.test(path) && !assetAllowed.test(path) && !['LICENSE', 'NOTICE'].includes(path)) ||
     /(?:^|\/)(?:\.env(?:\.[^/]*)?|vault[^/]*|auth\.json|oauth_creds\.json|credentials[^/]*|[^/]+\.(?:pem|pfx|enc))(?:\/|$)/i.test(path);
 });
 async function files(directory) {
@@ -33,6 +33,11 @@ for (const path of sources) {
   if (!native.equals(packed)) mismatches.push(path);
 }
 const pack = JSON.parse(asar.extractFile(archive, "package.json"));
+const legalFiles = ['LICENSE', 'NOTICE'];
+for (const path of legalFiles) {
+  if (!(await readFile(path)).equals(asar.extractFile(archive, path))) mismatches.push(path);
+}
+if (pack.license !== 'SEE LICENSE IN LICENSE') mismatches.push('package.json license');
 const executable = join(output, `CW_Handsoff_sys ${pack.version}.exe`);
 const sha256 = createHash("sha256")
   .update(await readFile(executable))
@@ -60,6 +65,7 @@ const fuseMismatches = Object.entries(expectedFuses)
 const report = {
   version: pack.version,
   matchedSourceFiles: sources.length,
+  matchedLegalFiles: legalFiles.length,
   mismatches,
   unwantedEntries: unwanted,
   exeBytes: (await stat(executable)).size,

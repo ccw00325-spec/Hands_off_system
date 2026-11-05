@@ -1,7 +1,13 @@
 {
   "name": "cw-handsoff-sys",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "author": {
+    "name": "Chan Woo Cho",
+    "email": "ccw00325@gmail.com",
+    "url": "https://github.com/ccw00325-spec"
+  },
   "description": "Local multi-AI engineering workbench with role-based delegation.",
   "type": "module",
   "main": "src/main.js",
@@ -31,6 +37,8 @@
     "appId": "dev.agent.controltower",
     "productName": "CW_Handsoff_sys",
     "files": [
+      "LICENSE",
+      "NOTICE",
       "src/*.js",
       "src/*.cjs",
       "src/core/*.js",
