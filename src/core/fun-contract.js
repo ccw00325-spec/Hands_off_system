@@ -17,6 +17,12 @@ export function skillHash(text) {
 }
 export function compileFunPlan(plan, options) {
   if (plan.questions?.length) return plan;
+  if (options.funEnabled === true) {
+    const unresolved = [...(plan.decisions ?? []).filter(item => item.source === 'assumption').map(item => item.description),
+      ...(plan.reviewItems ?? []).map(item => item.description)];
+    if (unresolved.length) return { ...plan, tasks: [], questions: unresolved.slice(0, 8).map((description, index) =>
+      ({id:`Q${index+1}`,prompt:`아직 정해지지 않은 조건을 어떻게 정할까요?\n${description}`,options:[]})) };
+  }
   if (plan.contractVersion !== 1)
     throw new Error("Fun 구조화 명세 contractVersion=1이 필요합니다.");
   const version = required(plan.version, "버전");

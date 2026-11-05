@@ -13,4 +13,6 @@ Preserve user data paths, OS-user credential isolation, folder grants, and expli
 
 Increment the patch version once per completed update via `npm run version:next`, rolling .9 to the next minor. Rebuilds keep that version. Remove old Windows executables only after the new package passes verification. Keep generated validation evidence outside source commits.
 
+On 2026-11-06 the owner explicitly reset the application version to 0.1.0 for the /fun clarification/desktop-notification update. Future patch increments start from this reset version; do not restore the older 0.2.x number automatically.
+
 The repository owner authorized these maintenance changes. External commercial use, derivative work and model training still follow LICENSE; do not relicense third-party materials.

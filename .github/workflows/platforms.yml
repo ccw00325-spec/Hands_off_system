@@ -35,6 +35,7 @@ jobs:
       - run: node scripts/check-startup.mjs
       - run: node scripts/check-startup-recovery.mjs
       - run: node scripts/check-prerequisites-ui.mjs
+      - run: node scripts/check-fun-ui.mjs
       - run: npm run package:win -- --config.compression=store
       - run: pwsh -NoProfile -File scripts/check-packaged-startup.ps1 -Portable
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -51,6 +52,7 @@ jobs:
             artifacts/packaged-startup-v07.json
             artifacts/package-verification.json
             artifacts/prerequisites-ui.png
+            artifacts/fun-questions.png
           retention-days: 14
   mac:
     if: endsWith(github.repository, '_mac')
@@ -77,6 +79,7 @@ jobs:
       - run: node scripts/check-startup.mjs
       - run: node scripts/check-startup-recovery.mjs
       - run: node scripts/check-prerequisites-ui.mjs
+      - run: node scripts/check-fun-ui.mjs
       - run: npm run package:mac -- --${{ matrix.arch }} --config.compression=store
       - run: node scripts/verify-package.mjs --mac --arch=${{ matrix.arch }}
       - run: codesign --verify --deep --strict "release-mac/${{ matrix.arch == 'arm64' && 'mac-arm64' || 'mac' }}/CW_Handsoff_sys.app"
@@ -97,6 +100,7 @@ jobs:
             artifacts/packaged-startup-mac.json
             artifacts/package-verification.json
             artifacts/prerequisites-ui.png
+            artifacts/fun-questions.png
           retention-days: 14
   docker:
     if: endsWith(github.repository, '_window')

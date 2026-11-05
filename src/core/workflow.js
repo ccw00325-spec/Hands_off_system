@@ -11,6 +11,7 @@ import { runMutation } from "./mutation.js";
 import { testPlanMarkdown } from "./test-plan.js";
 import { stateHandoff } from './handoff.js';
 import { layoutPreview } from './layout-preview.js';
+import { clarificationQuestions, clarificationAnswers } from './clarifications.js';
 
 const ACTIVE = new Set([
   "testing",
@@ -194,7 +195,15 @@ export class Workflow {
         `${PROVIDER_NAMES[change.from]} 사용 한도 소진 → ${PROVIDER_NAMES[change.provider]}로 전환합니다. 같은 역할과 완료 기준을 유지합니다.`,
         {activity:"fallback",fromProvider:change.from,provider:change.provider});
       delete state.options.preflightSwitches;
-      run.promise = this.execute(run).catch(async (error) => {
+      this.launch(run);
+      return structuredClone(state);
+    } finally {
+      this.starting.delete(projectId);
+    }
+  }
+  launch(run) {
+    const { state } = run;
+    run.promise = this.execute(run).catch(async (error) => {
         const cancelled = run.controller.signal.aborted && !run.failure;
         state.status = cancelled ? "cancelled" : "needs_attention";
         for (const task of state.tasks)
@@ -216,14 +225,34 @@ export class Workflow {
         ).catch(() => {});
         this.notify({
           type: "workflow",
-          projectId,
+          projectId: state.projectId,
           state: structuredClone(state),
         });
       });
+  }
+  async answerQuestions(projectId, runId, batchId, answers, conversationId) {
+    if (this.isActive(projectId)) throw new Error('다른 작업이 진행 중입니다. 질문 답변은 잠시 후 전송하세요.');
+    this.starting.add(projectId);
+    try {
+      const state = await this.current(projectId, runId);
+      const latest = await this.current(projectId);
+      if (!state || latest?.id !== runId || state.status !== 'needs_input' || state.questionBatchId !== batchId ||
+          state.options.conversationId !== conversationId)
+        throw new Error('이미 답변했거나 현재 대화의 질문이 아닙니다. 질문을 다시 확인하세요.');
+      const grant = await this.workspace.grant(projectId, state.grantId);
+      if (grant.root !== state.root) throw new Error('작업 폴더 연결이 변경되었습니다.');
+      const decisions = clarificationAnswers(clarificationQuestions(state.questions), answers);
+      state.options.questionAnswers = [...(state.options.questionAnswers ?? []), { batchId, answers: decisions }];
+      state.questions = [];
+      state.questionBatchId = null;
+      state.status = 'planning';
+      state.answeredQuestionBatches = (state.answeredQuestionBatches ?? 0) + 1;
+      const run = { state, controller: new AbortController(), queue: Promise.resolve() };
+      this.runs.set(projectId, run);
+      await this.record(run, 'gpt', '사용자 답변을 반영해 같은 작업의 명세를 이어서 작성합니다.', { answers: decisions });
+      this.launch(run);
       return structuredClone(state);
-    } finally {
-      this.starting.delete(projectId);
-    }
+    } finally { this.starting.delete(projectId); }
   }
   async record(run, actor, message, details = {}) {
     const operation = run.queue.then(async () => {
@@ -632,13 +661,15 @@ export class Workflow {
   async execute(run) {
     const { state } = run;
     const snapshot = await this.snapshot(run);
-    const skill = await readFile(
+    const enabled = state.options.funEnabled !== false;
+    const skill = enabled ? await readFile(
       new URL("../skills/fun.md", import.meta.url),
       "utf8",
-    );
+    ) : null;
     state.governance = {
-      skill: "fun",
-      sha256: skillHash(skill),
+      enabled,
+      skill: enabled ? "fun" : null,
+      sha256: enabled ? skillHash(skill) : null,
       contractVersion: state.options.funContract ? 1 : 0,
     };
     let plan;
@@ -670,9 +701,10 @@ export class Workflow {
     delete state.options.planCorrection;
     if (plan.questions?.length) {
       state.status = "needs_input";
-      state.questions = plan.questions;
+      state.questions = clarificationQuestions(plan.questions);
+      state.questionBatchId = randomUUID();
       await this.record(run, "gpt", "누락된 요구사항에 대한 답이 필요합니다.", {
-        questions: plan.questions,
+        questions: state.questions,
       });
       return;
     }
@@ -699,9 +731,9 @@ export class Workflow {
     state.tasks = plan.tasks.map((task) => ({ ...task, status: "pending" }));
     await this.workspace.write(
       state.projectId,
-      `Function/${state.id}_fun.md`,
+      enabled ? `Function/${state.id}_fun.md` : `.control-tower/runs/${state.id}/spec.md`,
       state.spec,
-      { newOnly: true, grantId: state.grantId },
+      { newOnly: true, grantId: state.grantId, internal: !enabled },
     );
     if (state.options.designApproval && (this.designGenerator || state.options.designMode === 'layout') && state.tasks.some((task) => task.kind === "ui")) {
       state.status = "awaiting_design";

@@ -75,7 +75,7 @@ export class CursorProvider {
     return this.ask(CHAT_FORMAT, context);
   }
   async plan(context) {
-    return this.ask(await planningInstructions(), context);
+    return this.ask(await planningInstructions(undefined, context.options), context);
   }
   review(context) {
     return this.ask(REVIEW_FORMAT, context);

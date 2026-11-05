@@ -6,6 +6,7 @@ import {
   shell,
   session,
   dialog,
+  Notification,
 } from "electron";
 import { join, dirname, resolve, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -40,9 +41,14 @@ import {ModelCatalog} from './core/model-catalog.js';
 import { loadLocalWindow } from './core/window-loader.js';
 import { Prerequisites, INSTALL_SITES } from './core/prerequisites.js';
 import { CallQuota } from './core/call-quota.js';
+import { InputNotifications, registerNotificationShortcut, NOTIFICATION_APP_ID, NOTIFICATION_CLSID } from './core/input-notifications.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 app.setName("CW_Handsoff_sys");
+if (process.platform === 'win32') {
+  app.setAppUserModelId(NOTIFICATION_APP_ID);
+  app.setToastActivatorCLSID(NOTIFICATION_CLSID);
+}
 // Preserve the original install's sign-ins and projects when the product name changes.
 if (app.isPackaged)
   app.setPath("userData", join(app.getPath("appData"), "agent-control-tower"));
@@ -80,6 +86,7 @@ let window,
 let preferences, conversations, agentChat, auxiliary;
 let prerequisites;
 let quota;
+let inputNotifications;
 let restorePromise;
 let gptRestoreState = null;
 let splash,
@@ -425,6 +432,7 @@ async function executionOptions(id) {
     allowExecution: settings.allowExecution && project.workspace?.executionApproved === true,
     unattended: settings.unattended,
     funContract: true,
+    funEnabled: settings.funByDefault,
     team: await roles.getTeam(id),
     roles: await roles.get(id),
     gptSource: current.gpt.source,
@@ -650,6 +658,7 @@ else {
           notify(event);
           if (event.type === "workflow")
             void agentChat?.finishedRun(event.state).catch(() => {});
+          if (event.type === 'workflow') void inputNotifications?.observe(event.state);
           if (event.type === "workflow" && event.state.status === "completed")
             void auxiliary.publish(event.state).catch(() => {});
         },
@@ -715,6 +724,17 @@ else {
       handle('tower:model-catalog',()=>catalog.snapshot());
       handle('tower:refresh-model-catalog',()=>refreshCatalog(null,true));
       const inbox = new NotificationInbox(store);
+      inputNotifications = new InputNotifications({ Notification,
+        register: () => registerNotificationShortcut(app, shell),
+        persist: value => inbox.add(value),
+        activate: scope => {
+          if (!window || window.isDestroyed()) return;
+          if (window.isMinimized()) window.restore();
+          window.show(); window.focus();
+          notify({ type: 'answer-required', ...scope });
+        },
+        failed: scope => notify({ type: 'system-notification-unavailable', ...scope }),
+      });
       handle("tower:notifications", () => inbox.list());
       handle("tower:add-notification", (value) => inbox.add(value));
       handle("tower:remove-notification", (id) => inbox.remove(id));
@@ -876,6 +896,7 @@ else {
           return saved;
         }),
       );
+      handle('tower:set-fun-default', enabled => exclusive('preferences', () => preferences.setFunDefault(enabled)));
       handle("tower:conversation-index", () => conversations.list());
       handle("tower:conversation-history", (id, conversationId, action) =>
         exclusive(`history:${id}`, async () => {
@@ -928,12 +949,23 @@ else {
       });
       handle(
         "tower:send-message",
-        (id, conversationId, agentId, message, mode, mutation, imageProvider) =>
+        (id, conversationId, agentId, message, mode, mutation, imageProvider, funEnabled) =>
           exclusive(`chat:${id}:${agentId}`, () => {
             if (once.has(`history:${id}`)) throw new Error("대화 기록을 정리하는 중입니다.");
-            return agentChat.send(id, conversationId, agentId, message, mode, mutation, imageProvider);
+            return agentChat.send(id, conversationId, agentId, message, mode, mutation, imageProvider, funEnabled);
           }),
       );
+      handle('tower:answer-questions', (id, conversationId, runId, batchId, answers) => exclusive(`chat:${id}:gpt`, async () => {
+        if (once.has(`history:${id}`)) throw new Error('대화 기록을 정리하는 중입니다.');
+        const conversation = await conversations.read(id, conversationId);
+        if (conversation.runId !== runId) throw new Error('이 대화의 작업이 아닙니다.');
+        const state = await workflow.answerQuestions(id, runId, batchId, answers, conversationId);
+        const resolved = state.options.questionAnswers.at(-1).answers;
+        await conversations.append(id, conversationId, 'gpt', 'user',
+          resolved.map(row => `${row.prompt}\n답변: ${row.value}`).join('\n\n'), 'complete');
+        agentChat.changed(id, conversationId);
+        return state;
+      }));
       handle("tower:stop-message", (id, agentId) =>
         agentChat.cancel(id, agentId),
       );

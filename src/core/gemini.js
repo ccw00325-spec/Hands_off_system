@@ -457,7 +457,7 @@ export class GeminiProvider {
     );
   }
   async plan(context) {
-    return this.ask(await planningInstructions(), context);
+    return this.ask(await planningInstructions(undefined, context.options), context);
   }
   build(context) {
     return this.ask(BUILD_FORMAT, context);

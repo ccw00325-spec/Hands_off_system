@@ -19,6 +19,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   designApproval: true,
   designMode: 'layout',
   mutationByDefault: false,
+  funByDefault: true,
   executionBackend: 'docker',
   dockerImage: 'node:24-bookworm-slim',
   terminalFontSize: 13,
@@ -55,6 +56,7 @@ export class Preferences {
       (input.executionBackend !== undefined && !['docker', 'host'].includes(input.executionBackend)) ||
       (input.dockerImage !== undefined && (typeof input.dockerImage !== 'string' || input.dockerImage.length > 200 || !/^[a-z0-9][a-z0-9./_:-]*(?:@sha256:[a-f0-9]{64})?$/.test(input.dockerImage))) ||
       (input.mutationByDefault !== undefined && typeof input.mutationByDefault !== 'boolean') ||
+      (input.funByDefault !== undefined && typeof input.funByDefault !== 'boolean') ||
       (input.maxDailyCalls !== undefined && (!Number.isInteger(input.maxDailyCalls) || input.maxDailyCalls < 5 || input.maxDailyCalls > 5000)) ||
       (input.maxOutputTokens !== undefined && (!Number.isInteger(input.maxOutputTokens) || input.maxOutputTokens < 1024 || input.maxOutputTokens > 65536)) ||
       (input.maxImageCallsPerDay !== undefined && (!Number.isInteger(input.maxImageCallsPerDay) || input.maxImageCallsPerDay < 0 || input.maxImageCallsPerDay > 100)) ||
@@ -82,6 +84,12 @@ export class Preferences {
       updatedAt: new Date().toISOString(),
     };
     await this.store.write("preferences", value);
+    return this.get();
+  }
+  async setFunDefault(enabled) {
+    if (typeof enabled !== 'boolean') throw new Error('/fun 켜기·끄기 값을 확인하세요.');
+    const saved = await this.store.read('preferences', {});
+    await this.store.write('preferences', { ...saved, funByDefault: enabled });
     return this.get();
   }
 }

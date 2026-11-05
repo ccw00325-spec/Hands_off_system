@@ -10,6 +10,7 @@ export function stateHandoff(state, actor, action, context) {
     changeBatches: (state.changes ?? []).slice(-60).map(row => ({ taskId:row.taskId, path:row.path, checkpoint:row.checkpoint })),
     recentFacts: (state.events ?? []).slice(-12).map(row => ({ at: row.at, actor: row.actor, message: row.message, taskId: row.taskId })),
     conversation: (context.history ?? state.options?.conversationHistory ?? []).slice(-12),
+    userDecisions: state.options?.questionAnswers ?? [],
     findings: context.issues ?? [], validation: state.validation ? { summary: state.validation.summary, passed: state.validation.passed, command: state.validation.command, output: state.validation.output?.slice(-6000) } : null,
     constraint: 'This is a factual task-state handoff, not vendor session memory or hidden chain-of-thought. Preserve verified facts, file hashes, criteria and unresolved findings. Re-read supplied source before modifying it.',
   });

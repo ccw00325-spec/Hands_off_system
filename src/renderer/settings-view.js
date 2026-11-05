@@ -11,6 +11,7 @@ export function fillPreferences(value) {
   $('#design-mode').value = value.designMode;
   $('#mutation-by-default').checked = value.mutationByDefault;
   $('#mutation-option').checked = value.mutationByDefault;
+  $('#fun-option').checked = value.funByDefault;
   $("#max-concurrent-agents").value = value.maxConcurrentAgents;
   $("#api-budget").value = value.apiBudgetUsd;
   $("#api-rate-model").value = value.apiRateModel;
@@ -43,6 +44,7 @@ export function readPreferences() {
     dockerImage: $('#docker-image').value.trim(),
     designMode: $('#design-mode').value,
     mutationByDefault: $('#mutation-by-default').checked,
+    funByDefault: $('#fun-option').checked,
     maxConcurrentAgents: Number($("#max-concurrent-agents").value),
     apiBudgetUsd: Number($("#api-budget").value),
     apiRateModel: $("#api-rate-model").value.trim(),

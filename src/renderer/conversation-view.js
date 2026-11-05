@@ -119,7 +119,7 @@ export function terminalFeed(container, events, messages, provider) {
       ),
     );
     if (item.questions?.length)
-      row.append(el("pre", item.questions.join("\n")));
+      row.append(el("pre", item.questions.map(question => typeof question === 'string' ? question : question.prompt).join("\n")));
     if (item.issues?.length)
       row.append(
         el(

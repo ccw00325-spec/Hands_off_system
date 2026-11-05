@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld(
     createConversation: call("create-conversation"),
     conversation: call("conversation"),
     sendMessage: call("send-message"),
+    answerQuestions: call('answer-questions'),
+    setFunDefault: call('set-fun-default'),
     stopMessage: call("stop-message"),
     chooseProjectFolder: call("choose-project-folder"),
     rerunTests: call("rerun-tests"),

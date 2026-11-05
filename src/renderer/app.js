@@ -11,6 +11,7 @@ import { createAgentDesk } from "./agent-desk.js";
 import { createNotifications } from "./notification-view.js";
 import { displayedTeam } from "./desk-state.js";
 import {createGuide} from './guide.js';
+import { createClarifications } from './clarification-view.js';
 import { CAPABILITIES, SLOT_IDS, defaultTeam } from "../core/team.js";
 import {
   renderTeamEditor,
@@ -24,6 +25,7 @@ import {
 } from "./workbench.js";
 const $ = (selector) => document.querySelector(selector);
 let desk, notifications;
+let funSaving = false;
 let preparedCatalog={};
 function applyModelCatalog(value){
   preparedCatalog=value??{};
@@ -92,6 +94,16 @@ const activeRuns = new Map(),
 desk = createAgentDesk({ onAction: missionAction });
 notifications = createNotifications(api, handleNotification);
 createGuide(missionAction);
+const clarificationUI = createClarifications({
+  submit: (run, answers) => call(api.answerQuestions(run.projectId, run.options.conversationId, run.id, run.questionBatchId, answers)),
+  changed: state => {
+    activeRuns.set(state.projectId, state);
+    if (state.projectId === projectData?.activeId && state.options.conversationId === currentConversation?.id) {
+      renderWorkflow(state); void loadConversation(state.options.conversationId);
+    }
+  },
+  error: () => {},
+});
 
 function toast(message, type = "") {
   notifications.push(message, type, { projectId: projectData?.activeId, conversationId: currentConversation?.id });
@@ -102,7 +114,8 @@ async function handleNotification(item) {
       renderProjects(await call(api.selectProject(item.projectId)));
     if (item.conversationId && item.conversationId !== currentConversation?.id)
       await loadConversation(item.conversationId);
-    missionAction(item.action ?? "workflow");
+    if (item.action === 'questions') clarificationUI.open();
+    else missionAction(item.action ?? "workflow");
   } catch (error) { toast(error.message,"error"); }
 }
 function currentDisplayTeam() { return displayedTeam(currentRun, teamConfig ?? [], currentConversation); }
@@ -694,6 +707,11 @@ async function initialize() {
     );
   } else {
     api.onEvent(async (event) => {
+      if (event.type === 'answer-required') { await handleNotification(event); return; }
+      if (event.type === 'system-notification-unavailable') {
+        toast('시스템 알림을 표시하지 못했습니다. 종 아이콘의 ‘질문에 답변하기’를 이용하고 OS 알림 설정을 확인해 주세요.');
+        return;
+      }
       if(event.type==='model-catalog'){applyModelCatalog(event.catalog);return;}
       if (event.type === "service-login") {
         if ($("#services-dialog").open)
@@ -889,6 +907,7 @@ function updateReadiness() {
   }
   const question = mode.value === "question";
   $("#mutation-option").disabled = question;
+  $('#fun-option').disabled = question || funSaving;
   const needed = [];
   if (!linkedFolder) needed.push("프로젝트 폴더 연결");
   if (!teamConfig || roleSaving) needed.push("역할 배치 확인");
@@ -919,7 +938,7 @@ function updateReadiness() {
   const pending = pendingChats.get("gpt") === currentConversation?.id;
   $("#stop-controller-chat").hidden = !pending;
   $("#start-workflow").disabled =
-    needed.length > 0 || pending || !$("#planner-input").value.trim();
+    needed.length > 0 || pending || funSaving || !$("#planner-input").value.trim();
   const request = $("#planner-input").value.trim();
   const reviewingDesign = currentRun?.status === "awaiting_design";
   $("#start-workflow").textContent = reviewingDesign && /^이대로\s*적용[.!]?$/.test(request) ? "시안 승인 ↑"
@@ -1051,6 +1070,7 @@ async function loadApprovedPreview(run) {
 }
 function renderWorkflow(run) {
   currentRun = run;
+  clarificationUI.update(run);
   const failure = run?.testFailure;
   $("#test-recovery").hidden = !failure;
   $("#test-recovery-title").textContent = failure
@@ -1113,7 +1133,7 @@ function renderWorkflow(run) {
   renderAssignedRoles();
   if (run?.status === "needs_input")
     $("#run-readiness").textContent =
-      "컨트롤 타워의 질문에 대한 답을 요청에 포함해 다시 시작하세요.";
+      "요구사항 답변을 기다립니다. ‘질문에 답변하기’에서 선택하거나 직접 입력하세요.";
   updateReadiness();
 }
 $("#choose-folder").addEventListener("click", () =>
@@ -1187,6 +1207,7 @@ $("#start-workflow").addEventListener("click", () =>
         $("#controller-mode").value,
         $("#mutation-option").checked,
         selectedImageProvider(),
+        $('#fun-option').checked,
       ),
     );
     $("#planner-input").value = "";
@@ -1204,6 +1225,14 @@ $("#start-workflow").addEventListener("click", () =>
     if (currentRun?.status === "awaiting_design" && /마음에\s*안|다시\s*만들|시안\s*수정/.test(message)) openDesign();
   }),
 );
+$('#fun-option').addEventListener('change', async () => {
+  const control = $('#fun-option'), desired = control.checked;
+  funSaving = true;
+  control.disabled = true;
+  try { preferences = await call(api.setFunDefault(desired)); control.checked = preferences.funByDefault; }
+  catch (error) { control.checked = !desired; toast(error.message, 'error'); }
+  finally { funSaving = false; updateReadiness(); }
+});
 $("#stop-workflow").addEventListener("click", () =>
   busy($("#stop-workflow"), "중지 중…", async () => {
     renderWorkflow(await call(api.stopWorkflow(projectData.activeId)));

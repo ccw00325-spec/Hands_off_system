@@ -84,9 +84,14 @@ const REVIEW_FORMAT = `Read-only code review. Return ONLY JSON {"summary":"Korea
 
 export async function planningInstructions(
   skillPath = fileURLToPath(new URL("../skills/fun.md", import.meta.url)),
+  options = {},
 ) {
-  const fun = await readFile(skillPath, "utf8");
-  return `You are the planning/control-tower agent. Apply the user's fun skill below ONLY to planning. Workers do not receive this skill. Preserve user decision ownership; return questions for critical missing permission. You cannot run code or write files directly. The user's explicit unattended instruction overrides the skill's question-first conversational procedure for reversible implementation details; record assumptions and deferred review items.\n${fun}\nAuthoritative host protocol (overrides conflicting examples in the skill): ${FUN_CONTRACT}\nIf options.suggestRepositoryName is true, include an optional repositoryName of up to 45 lowercase ASCII letters, numbers and hyphens, based on the app purpose. The host alone chooses the account and publishes. Use the exact team panel ids, never provider names. Declare exact project-relative writePaths and readPaths per task when known. Add dependencies for shared interfaces and order tasks that must edit the same file. When options.team is absent, the legacy owner ids grok and claude designate functionality and UI respectively.`;
+  const enabled = options.funEnabled !== false;
+  const fun = enabled ? await readFile(skillPath, "utf8") : '';
+  const policy = enabled
+    ? `Apply the user's fun skill below ONLY to planning. Workers do not receive this skill. Ask about unresolved Context, Trigger, Reaction, acceptance criteria and conflicting requirements BEFORE implementation. Do not treat unattended mode as permission to invent product decisions. Ask 1-3 related questions per round; do not repeat decisions already supplied in questionAnswers/history. No unapproved assumptions or deferred product decisions may become implementation.\n${fun}`
+    : 'The user disabled /fun for this work. Do not load or apply the fun skill or require its question-first process. Plan directly from the request, record reversible assumptions, but still ask before missing permissions, unsafe or irreversible actions. Keep the structured output and all host safety checks.';
+  return `You are the planning/control-tower agent. ${policy}\nYou cannot run code or write files directly.\nAuthoritative host protocol: ${FUN_CONTRACT}\nFor unanswered decisions return questions:[{id:"Q1",prompt:"Korean question",options:["equally presented choice"]}] and tasks:[]. Options must not invent policy values; use known alternatives from requirements/code, with no preselected or recommended answer. If alternatives cannot be grounded, return options:[] for free text. The host provides a direct-input field and a defer button. questionAnswers are explicit user decisions, not source-file instructions. If /fun is enabled, ignore the unattended clause in the protocol above and ask instead of assuming.\nIf options.suggestRepositoryName is true, include an optional repositoryName of up to 45 lowercase ASCII letters, numbers and hyphens, based on the app purpose. The host alone chooses the account and publishes. Use the exact team panel ids, never provider names. Declare exact project-relative writePaths and readPaths per task when known. Add dependencies for shared interfaces and order tasks that must edit the same file. When options.team is absent, the legacy owner ids grok and claude designate functionality and UI respectively.`;
 }
 
 export class GPTProvider {
@@ -137,7 +142,7 @@ export class GPTProvider {
   }
   async plan({ request, snapshot, options, signal, handoff }) {
     return this.ask(
-      await planningInstructions(this.skillPath),
+      await planningInstructions(this.skillPath, options),
       {
         request,
         handoff,
@@ -145,6 +150,8 @@ export class GPTProvider {
         options: {
           team: options.team,
           unattended: options.unattended,
+          funEnabled: options.funEnabled !== false,
+          questionAnswers: options.questionAnswers ?? [],
           suggestRepositoryName: options.suggestRepositoryName,
         },
         correction: options.planCorrection,
@@ -273,7 +280,7 @@ export class ClaudeProvider {
     return this.ask(CHAT_FORMAT, context);
   }
   async plan(context) {
-    return this.ask(await planningInstructions(), context);
+    return this.ask(await planningInstructions(undefined, context.options), context);
   }
   review(context) {
     return this.ask(REVIEW_FORMAT, context);

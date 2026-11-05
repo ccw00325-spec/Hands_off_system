@@ -138,7 +138,7 @@ export function missionState(run, team = []) {
   else if (status === "needs_input")
     action = {
       title: "요구사항에 답을 추가해 주세요",
-      detail: run.questions?.join("\n") || summary,
+      detail: run.questions?.map(question => typeof question === 'string' ? question : question.prompt).join("\n") || summary,
       label: "질문과 요청 보기",
       target: "controller",
     };

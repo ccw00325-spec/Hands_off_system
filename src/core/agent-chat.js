@@ -22,7 +22,7 @@ export class AgentChat {
     this.finished = new Set();
     this.questionRuns = new Map();
   }
-  async send(projectId, conversationId, agentId, message, mode = "question", mutation = false, imageProvider = "gpt") {
+  async send(projectId, conversationId, agentId, message, mode = "question", mutation = false, imageProvider = "gpt", funEnabled) {
     const key = projectId + ":" + agentId;
     if (this.sending.has(key)) throw new Error("메시지를 전송 중입니다.");
     this.sending.add(key);
@@ -35,6 +35,7 @@ export class AgentChat {
         mode,
         mutation,
         imageProvider,
+        funEnabled,
       );
     } finally {
       this.sending.delete(key);
@@ -48,6 +49,7 @@ export class AgentChat {
     mode = "question",
     mutation = false,
     imageProvider = "gpt",
+    funEnabled,
   ) {
     if (
       typeof message !== "string" ||
@@ -62,6 +64,8 @@ export class AgentChat {
       conversationId,
     );
     let options = await this.optionsFor(projectId, conversationId);
+    if (funEnabled !== undefined && typeof funEnabled !== 'boolean') throw new Error('/fun 켜기·끄기 값을 확인하세요.');
+    const useFun = funEnabled ?? options.funEnabled ?? true;
     const current = conversation.runId ? await this.workflow.current(projectId, conversation.runId) : null;
     const live = this.workflow.runs?.get(projectId);
     const active = this.workflow.isActive(projectId) && live?.state.options.conversationId === conversationId ? live : null;
@@ -119,6 +123,8 @@ export class AgentChat {
       await this.conversations.setRouting(projectId, conversationId, { team: options.team ?? teamFor(options), runtimeRoutes: {} });
       const state = await this.workflow.start(projectId, {
         ...options,
+        funEnabled: useFun,
+        unattended: useFun ? false : options.unattended,
         mutation: mutation === true,
         imageProvider: imageProvider === "gemini" ? "gemini" : "gpt",
         request: message,
@@ -237,7 +243,6 @@ export class AgentChat {
   async finishedRun(state) {
     if (
       !state.options?.conversationId ||
-      this.finished.has(state.id + ":" + state.status) ||
       [
         "planning",
         "building",
@@ -249,10 +254,12 @@ export class AgentChat {
       ].includes(state.status)
     )
       return;
-    this.finished.add(state.id + ":" + state.status);
+    const finishedKey = state.id + ':' + state.status + ':' + (state.questionBatchId ?? state.answeredQuestionBatches ?? '');
+    if (this.finished.has(finishedKey)) return;
+    this.finished.add(finishedKey);
     const summary = [
       state.events.at(-1)?.message ?? state.status,
-      ...(state.questions ?? []),
+      ...(state.questions ?? []).map(question => typeof question === 'string' ? question : question.prompt),
       state.validation?.summary ?? "",
     ]
       .filter(Boolean)

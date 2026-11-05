@@ -2787,3 +2787,16 @@ body[data-sidebar="off"] .workbench-shell {
 :root #prerequisites-dialog > .dialog-heading { padding: 0 0 24px; }
 @media(max-width:600px) { :root .prerequisite-row { grid-template-columns: 1fr auto; } :root .prerequisite-state { grid-column: 1; } }
 :root .layout-preview { padding: 28px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; max-height: 70vh; max-width: calc(100% - 32px); box-sizing: border-box; text-align: left; overflow: auto; color: #d3e4dd; background: #101714; border-radius: 10px; margin: 16px; }
+.work-skill-options { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; padding:12px 0 6px; }
+.work-skill-options button[hidden] { display:none; }
+:root #fun-questions-dialog { padding:0; width:min(700px,calc(100vw - 32px)); max-height:88vh; overflow:auto; }
+#fun-questions-form > header { position:sticky; top:0; z-index:1; background:#161a1e; padding:20px 24px; }
+#fun-questions-form > footer { position:sticky; bottom:0; display:flex; justify-content:flex-end; flex-wrap:wrap; gap:12px; padding:16px 24px; background:#161a1e; border-top:1px solid #30343a; }
+.fun-questions-body { padding:12px 24px 24px; }
+#fun-questions-context { white-space:pre-wrap; overflow-wrap:anywhere; max-height:6em; overflow:auto; }
+#fun-question-fields fieldset { min-width:0; margin:20px 0; padding:16px; border:1px solid #343e43; border-radius:10px; }
+#fun-question-fields legend { white-space:pre-wrap; overflow-wrap:anywhere; padding:0 6px; }
+.fun-choice { display:flex; align-items:flex-start; gap:10px; padding:12px 8px; cursor:pointer; }
+.fun-choice span { overflow-wrap:anywhere; white-space:pre-wrap; }
+.fun-choice input { width:18px; height:18px; flex-shrink:0; }
+#fun-question-fields textarea { box-sizing:border-box; width:100%; resize:vertical; margin-top:8px; }

@@ -54,6 +54,7 @@ export function createNotifications(api, onAction) {
           workflow: "Workflow 보기",
           checkpoints: "체크포인트",
           delivery: "전송 상태",
+          questions: '질문에 답변하기',
         }[item.action],
       );
       action.type = "button";
@@ -100,6 +101,7 @@ export function createNotifications(api, onAction) {
             workflow: "작업 확인",
             checkpoints: "복원 기록",
             delivery: "전송 상태",
+            questions: '질문에 답변하기',
           }[item.action],
         );
         action.type = "button";
@@ -174,9 +176,9 @@ export function createNotifications(api, onAction) {
         ].includes(run.status)
       )
         notices.push({
-          key: `${run.id}:${run.status}:${run.round}`,
+          key: run.status === 'needs_input' ? `${run.id}:input:${run.questionBatchId}` : `${run.id}:${run.status}:${run.round}`,
           message: run.events?.at(-1)?.message ?? run.status,
-          action: run.validation?.requiresConsent ? "settings" : "workflow",
+          action: run.status === 'needs_input' ? 'questions' : run.validation?.requiresConsent ? "settings" : "workflow",
           type:
             run.status === "completed"
               ? "success"

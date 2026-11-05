@@ -7,6 +7,7 @@ const actions = new Set([
   "connections",
   "checkpoints",
   "delivery",
+  "questions",
 ]);
 export class NotificationInbox {
   constructor(store) {

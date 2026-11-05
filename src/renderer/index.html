@@ -265,13 +265,19 @@
                   </button>
                 </div>
               </div>
-              <details id="advanced-validation"><summary>고급 검증 옵션</summary><div class="mutation-option-row">
-                <span class="log-label">검증 옵션</span>
-                <label class="check-label">
-                  <input id="mutation-option" type="checkbox" aria-describedby="mutation-option-hint" /> 뮤테이션 테스트
+              <div class="work-skill-options">
+                <label class="check-label" title="체크를 해제하면 새 작업에서 /fun의 빈칸 확인 절차를 끕니다.">
+                  <input id="fun-option" type="checkbox" checked aria-describedby="fun-option-hint" /> /fun 요구사항 확인
                 </label>
+                <label class="check-label">
+                  <input id="mutation-option" type="checkbox" aria-describedby="mutation-option-hint" /> /mut 뮤테이션 테스트
+                </label>
+                <button id="answer-fun-questions" type="button" hidden>질문에 답변하기</button>
+              </div>
+              <details id="advanced-validation"><summary>스킬 옵션 안내</summary>
+                <p id="fun-option-hint" class="hint">새 작업에 적용 · /fun을 켜면 미정 조건은 팝업으로 확인합니다. 꺼도 실행 권한·보안 확인은 유지합니다.</p>
                 <span id="mutation-option-hint" class="hint">기본 테스트 통과 후 실행 · 프로젝트에 test:mutation 필요</span>
-              </div></details>
+              </details>
             </div>
 
             <p id="run-readiness" class="run-readiness">
@@ -1516,6 +1522,16 @@
         </button>
       </header>
       <pre id="test-report-content"></pre>
+    </dialog>
+    <dialog id="fun-questions-dialog" aria-labelledby="fun-questions-title">
+      <form id="fun-questions-form">
+        <header class="dialog-heading"><div><p class="eyebrow">YOUR DECISION</p><h2 id="fun-questions-title">요구사항 확인</h2></div>
+          <button id="close-fun-questions" type="button" class="icon-button" aria-label="질문을 나중에 답변하고 닫기">×</button></header>
+        <div class="fun-questions-body"><p id="fun-questions-context" class="hint"></p>
+          <p>답변을 보내기 전까지 구현은 기다립니다. 선택지를 고르거나 각 질문 아래에 직접 입력해 주세요.</p>
+          <div id="fun-question-fields"></div><p id="fun-questions-error" class="hint error" role="alert"></p></div>
+        <footer><button id="defer-fun-questions" type="button">나중에 답변</button><button id="submit-fun-questions" type="submit" class="primary">답변 보내고 이어서 진행</button></footer>
+      </form>
     </dialog>
     <div id="courier-layer" aria-hidden="true">
       <div id="courier" hidden><img src="assets/mascot.png" alt="" width="54" height="54" /><span class="courier-caption"></span></div>
