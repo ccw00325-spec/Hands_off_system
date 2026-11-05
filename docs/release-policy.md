@@ -12,7 +12,7 @@
 
 ## 버전
 
-- 현재 기준 `0.1.0`.
+- 버전 정책의 시작점은 `0.1.0`이며, 현재 배포 버전은 `package.json`을 기준으로 한다.
 - 일반 수정은 patch만 올린다: `0.1.0 → 0.1.1 → … → 0.1.9`.
 - patch가 9이면 다음 버전은 minor를 올리고 patch를 0으로 돌린다: `0.1.9 → 0.2.0`.
 - `npm run version:next`가 package.json, package-lock.json 루트 버전, README 실행 경로를 함께 변경한다. UI 버전은 Electron의 실제 앱 버전에서 읽는다.

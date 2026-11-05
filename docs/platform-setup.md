@@ -2,7 +2,7 @@
 
 같은 소스와 버전을 두 저장소에 함께 반영합니다.
 
-Mac의 최종 네이티브 검증 대상은 macOS 26 Apple Silicon과 macOS 15 Intel 러너입니다. macOS 15 Apple Silicon도 앞선 배치에서 검사했지만, 해당 러너의 대기가 길어 최종 검사는 macOS 26에서 진행합니다. 다른 모든 macOS 버전의 실행까지 확인했다는 의미는 아닙니다.
+Mac의 최종 네이티브 검증 대상은 macOS 26 Apple Silicon과 macOS 15 Intel 러너입니다. 다른 모든 macOS 버전의 실행까지 확인했다는 의미는 아닙니다.
 
 | 환경 | 저장소 | 패키지 |
 | --- | --- | --- |
