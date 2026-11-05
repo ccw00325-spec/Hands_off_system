@@ -1,6 +1,6 @@
 # 기능 명세 버전 안내
 
-현재 버전은 **0.2.3**이다. 이번 변경은 [라이선스와 이용 승인](../docs/licensing.md) 및 배포 고지에 관한 것이며 작업 동작은 0.2.2와 같다. [별도 시작 창·공용 모델 목록](startup_catalog_fun.md)이 시작 순서와 모델 사전 준비, 일시적인 화면 로딩 실패의 재시도를 설명한다. [AI 설정·자동 인계](role_settings_auto_handoff_fun.md)의 기본 역할과 단일 구현 담당, 팀 인계는 유지하며 모델 조회 시점만 앱 시작으로 이동했다. [세로 AI 데스크](agent_desk_fallback_fun.md)의 팝업·알림 배치도 유지한다. 과거 문서는 이력으로 보존한다.
+현재 버전은 **0.2.4**이다. [플랫폼·설치·실행 보호](platform_safety_upgrade_fun.md)가 구조화 인계·공유 쿼터·Docker 기본 실행·텍스트 구조안·선택형 뮤테이션·설치 안내·Window/Mac 동시 반영을 설명한다. 이 명세는 과거 문서의 이미지 자동 호출·뮤테이션 기본 켜짐·호스트 기본 실행 설명을 대체한다. [별도 시작 창·공용 모델 목록](startup_catalog_fun.md)의 시작 순서·목록 재사용·로딩 재시도와 [AI 설정·자동 인계](role_settings_auto_handoff_fun.md)의 역할·팀 인계, [세로 AI 데스크](agent_desk_fallback_fun.md)의 팝업·알림은 유지한다. 과거 문서는 이력으로 보존한다.
 
 v0.7의 최신 결정·구현·검증은 [테스트·대화 작업 공간 명세](test_conversation_workbench_fun.md)와 [검증 기록](../docs/verification-0.7.md)을 기준으로 한다. 아래 항목은 v0.6까지의 변경 이력이다.
 

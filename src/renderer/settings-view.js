@@ -2,6 +2,15 @@ const $ = (selector) => document.querySelector(selector);
 export function fillPreferences(value) {
   $("#max-repair-rounds").value = value.maxRepairRounds;
   $("#max-agent-calls").value = value.maxAgentCalls;
+  $('#max-daily-calls').value = value.maxDailyCalls;
+  $('#max-image-calls').value = value.maxImageCallsPerDay;
+  $('#max-output-tokens').value = value.maxOutputTokens;
+  $('#daily-api-budget').value = value.dailyApiBudgetUsd;
+  $('#execution-backend').value = value.executionBackend;
+  $('#docker-image').value = value.dockerImage;
+  $('#design-mode').value = value.designMode;
+  $('#mutation-by-default').checked = value.mutationByDefault;
+  $('#mutation-option').checked = value.mutationByDefault;
   $("#max-concurrent-agents").value = value.maxConcurrentAgents;
   $("#api-budget").value = value.apiBudgetUsd;
   $("#api-rate-model").value = value.apiRateModel;
@@ -26,6 +35,14 @@ export function readPreferences() {
   return {
     maxRepairRounds: Number($("#max-repair-rounds").value),
     maxAgentCalls: Number($("#max-agent-calls").value),
+    maxDailyCalls: Number($('#max-daily-calls').value),
+    maxImageCallsPerDay: Number($('#max-image-calls').value),
+    maxOutputTokens: Number($('#max-output-tokens').value),
+    dailyApiBudgetUsd: Number($('#daily-api-budget').value),
+    executionBackend: $('#execution-backend').value,
+    dockerImage: $('#docker-image').value.trim(),
+    designMode: $('#design-mode').value,
+    mutationByDefault: $('#mutation-by-default').checked,
     maxConcurrentAgents: Number($("#max-concurrent-agents").value),
     apiBudgetUsd: Number($("#api-budget").value),
     apiRateModel: $("#api-rate-model").value.trim(),

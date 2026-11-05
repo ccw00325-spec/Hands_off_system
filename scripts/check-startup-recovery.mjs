@@ -16,6 +16,7 @@ for (const mode of ['recover', 'persistent', 'cancel']) {
     application = await electron.launch({ args: ['.'], cwd: resolve('.'), env });
     await application.evaluate(({ BrowserWindow, dialog }, { mode, url }) => {
       const require = process.getBuiltinModule('module').createRequire(url);
+      require(process.getBuiltinModule('url').fileURLToPath(url).replace('codex.js','prerequisites.js')).Prerequisites.prototype.scan=async()=>({rows:[],needsAttention:false,platform:process.platform,arch:process.arch});
       for (const [file, name] of [['codex', 'CodexConnection'], ['cursor', 'CursorConnection'], ['gemini', 'GeminiConnection'], ['claude', 'ClaudeConnection']]) {
         const cls = require(process.getBuiltinModule('url').fileURLToPath(url).replace('codex.js', file + '.js'))[name];
         cls.prototype.status = async () => ({ installed: false, connected: false, login: { waiting: false } });

@@ -18,6 +18,7 @@ try {
     (_electron, url) => {
       const p = process.getBuiltinModule("url").fileURLToPath(url),
         require = process.getBuiltinModule("module").createRequire(p);
+      require(p.replace('codex.js','prerequisites.js')).Prerequisites.prototype.scan=async()=>({rows:[],needsAttention:false,platform:process.platform,arch:process.arch});
       globalThis.__modelCalls = { gpt: 0, grok: 0, gemini: 0 };
       globalThis.__modelGate = new Promise(
         (resolve) => (globalThis.__releaseModels = resolve),

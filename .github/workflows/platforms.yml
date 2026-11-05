@@ -1,0 +1,119 @@
+name: Platform verification and packages
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'test/**'
+      - 'build/**'
+      - 'package*.json'
+      - '.github/workflows/**'
+      - 'LICENSE'
+      - 'NOTICE'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: platform-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    if: endsWith(github.repository, '_Window')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:desktop
+      - run: node scripts/check-startup.mjs
+      - run: node scripts/check-startup-recovery.mjs
+      - run: node scripts/check-prerequisites-ui.mjs
+      - run: npm run package:win -- --config.compression=store
+      - run: pwsh -NoProfile -File scripts/check-packaged-startup.ps1 -Portable
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Hands-off-Window-x64
+          path: release/*.exe
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: Windows-verification
+          path: |
+            artifacts/*report.json
+            artifacts/packaged-startup-v07.json
+            artifacts/package-verification.json
+            artifacts/prerequisites-ui.png
+          retention-days: 14
+  mac:
+    if: endsWith(github.repository, '_Mac')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:desktop
+      - run: node scripts/check-startup.mjs
+      - run: node scripts/check-startup-recovery.mjs
+      - run: node scripts/check-prerequisites-ui.mjs
+      - run: npm run package:mac -- --${{ matrix.arch }} --config.compression=store
+      - run: node scripts/verify-package.mjs --mac --arch=${{ matrix.arch }}
+      - run: codesign --verify --deep --strict "release-mac/${{ matrix.arch == 'arm64' && 'mac-arm64' || 'mac' }}/CW_Handsoff_sys.app"
+      - run: node scripts/check-packaged-mac.mjs --arch=${{ matrix.arch }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Hands-off-Mac-${{ matrix.arch }}
+          path: |
+            release-mac/*.dmg
+            release-mac/*.zip
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: Mac-${{ matrix.arch }}-verification
+          path: |
+            artifacts/*report.json
+            artifacts/packaged-startup-mac.json
+            artifacts/package-verification.json
+            artifacts/prerequisites-ui.png
+          retention-days: 14
+  docker:
+    if: endsWith(github.repository, '_Window')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: docker pull node:24-bookworm-slim
+      - run: node scripts/check-docker-isolation.mjs --require
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: Docker-isolation-verification
+          path: artifacts/docker-isolation-report.json
+          retention-days: 14

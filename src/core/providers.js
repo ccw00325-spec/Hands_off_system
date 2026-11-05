@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { access, readFile } from "node:fs/promises";
-import { join, delimiter } from "node:path";
-import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { objectJSON } from "./workflow.js";
 import { LoginFlow } from "./login-flow.js";
@@ -13,14 +12,12 @@ import { nativeEnvironment } from "./child-env.js";
 import { isolatedRequest } from "./isolated-request.js";
 import { CHAT_FORMAT } from "./agent-chat.js";
 import { providerFailure } from "./provider-errors.js";
+import { toolRoots } from './tool-paths.js';
+import { reserveTextCost } from './call-quota.js';
 
 export async function findExecutable(name) {
   const executable = process.platform === "win32" ? `${name}.exe` : name;
-  const roots = [
-    join(homedir(), ".local", "bin"),
-    join(homedir(), `.${name}`, "bin"),
-    ...(process.env.PATH || "").split(delimiter),
-  ];
+  const roots = await toolRoots(name);
   for (const root of roots.filter(
     (root) => root && /^(?:[A-Za-z]:[\\/]|\/)/.test(root),
   )) {
@@ -115,6 +112,7 @@ export class GPTProvider {
     if (this.native && options.gptSource !== "api")
       return this.native.ask(instructions, data, options, signal, designImage);
     const token = await this.auth.access();
+    await options.onApiReservation?.(reserveTextCost(instructions, payload, options));
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       redirect: "error",
@@ -125,6 +123,7 @@ export class GPTProvider {
       },
       body: JSON.stringify({
         model: options.gptModel,
+        max_output_tokens: options.maxOutputTokens ?? 16384,
         instructions,
         input: [{ role: "user", content: designImage ? [
           { type: "input_text", text: JSON.stringify(data) },
@@ -136,11 +135,12 @@ export class GPTProvider {
     });
     return objectJSON(await readResponseStream(response, (input, output) => options.onUsage?.(input, output, options.gptModel)));
   }
-  async plan({ request, snapshot, options, signal }) {
+  async plan({ request, snapshot, options, signal, handoff }) {
     return this.ask(
       await planningInstructions(this.skillPath),
       {
         request,
+        handoff,
         snapshot,
         options: {
           team: options.team,
@@ -170,6 +170,7 @@ export class GPTProvider {
         ownership: context.ownership,
         validation: context.validation,
         spec: context.spec,
+        handoff: context.handoff,
       },
       context.options,
       context.signal,

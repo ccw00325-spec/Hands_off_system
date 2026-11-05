@@ -207,9 +207,17 @@ function renderProjects(data) {
 function renderImage() {
   const design = currentRun?.status === "awaiting_design" ? currentRun.design : null;
   const currentGenerating = generationProject === projectData?.activeId || ["pending", "generating"].includes(design?.status);
-  const preview = !design || (design.status === "ready" && resultImage?.artifactId === design.artifactId)
+  const layout = design?.format === 'layout' && design.status === 'ready';
+  $('#image-heading').textContent = layout ? '화면 구조 먼저 확인하기' : 'UI 시안 만들기';
+  $('#design-provider-note').textContent = layout ? '이 구조안에는 이미지 API 키나 생성 비용이 필요하지 않습니다. 시각적인 시안이 필요할 때만 이미지 생성 버튼을 사용하세요.' : 'GPT 또는 Gemini 이미지 모델을 선택하세요. 생성 비용은 각 이미지 API 계정에서 처리됩니다.';
+  $('#generate-image').classList.toggle('primary', !layout);
+  $('#update-layout').classList.toggle('primary', layout);
+  $('#layout-preview').hidden = !layout;
+  $('#layout-preview').textContent = layout ? design.previewText : '';
+  $('#update-layout').hidden = !design;
+  const preview = design?.format === 'layout' ? null : !design || (design.status === "ready" && resultImage?.artifactId === design.artifactId)
     ? resultImage : null;
-  $("#image-empty").hidden = Boolean(preview);
+  $("#image-empty").hidden = Boolean(preview) || layout;
   $("#generated-image").hidden = !preview;
   $("#image-result").hidden = !preview;
   if (preview) {
@@ -834,7 +842,9 @@ async function initialize() {
       const restored=await restoreSavedConnections(boot.restored);
       const status=await refreshStatus(boot.status);
       applyModelCatalog(boot.catalog);
-      if (!localStorage.getItem("tower-tour-v1")) startTour();
+      const setupNeeded = boot.prerequisites?.needsAttention && !sessionStorage.getItem('tower-setup-seen');
+      if (setupNeeded) showPrerequisites(boot.prerequisites);
+      else if (!localStorage.getItem("tower-tour-v1")) startTour();
       else if (!preferences.onboardingComplete) $("#settings-dialog").showModal();
       $("#footer-status").textContent =
         "연결 상태 확인 완료 · 프로젝트 폴더에서 작업합니다.";
@@ -846,7 +856,7 @@ async function initialize() {
       if (
         preferences.onboardingComplete &&
         !$("#settings-dialog").open &&
-        !$("#first-run-tour").open &&
+        !$("#first-run-tour").open && !$('#prerequisites-dialog').open &&
         restored?.session.firstLaunch &&
         !connected
       )
@@ -1023,6 +1033,7 @@ const RUN_LABELS = {
 };
 let pendingDesignArtifact;
 async function loadApprovedPreview(run) {
+  if (run.design?.format === 'layout') return;
   if (pendingDesignArtifact === run.design.artifactId) return;
   pendingDesignArtifact = run.design.artifactId;
   try {
@@ -1721,7 +1732,7 @@ function renderGeminiConnection(status = {}) {
   else if (!status.installed)
     message(
       "#gemini-message",
-      "Node.js 20 이상과 공식 Gemini CLI가 필요합니다. 설치 버튼으로 이 앱의 도구 폴더에 설치할 수 있습니다.",
+      "이 앱에서는 Node.js 24 이상과 공식 Gemini CLI를 사용합니다. 설정의 설치 도구 확인에서 공식 안내를 열 수 있습니다.",
     );
 }
 $("#gemini-login").addEventListener("click", async () => {
@@ -2050,6 +2061,8 @@ $("#open-settings").addEventListener("click", async () => {
   preferences = await call(api.preferences());
   fillPreferences(preferences);
   $("#settings-dialog").showModal();
+  const quota = await call(api.callQuota());
+  $('#call-quota-status').textContent = `오늘 (UTC ${quota.day}) · 전체 ${quota.calls}회 / 이미지 ${quota.images}회 · 텍스트 API 예약·사용 $${quota.reservedOrSpentUsd.toFixed(4)}`;
 });
 let checkpointProject;
 let checkpointToken;
@@ -2433,4 +2446,30 @@ $("#retry-delivery").addEventListener("click", () =>
     }
   }),
 );
+function showPrerequisites(report) {
+  const list = $('#prerequisites-list'); list.replaceChildren();
+  $('#prerequisites-status').textContent = `${report.platform} · ${report.arch} · 설치 후 ‘다시 확인’을 눌러 주세요.`;
+  const labels = { ready: '준비됨', missing: '설치 필요', outdated: '24 이상으로 업데이트', unknown: '실행 확인 필요', 'npm-missing': 'npm 설치 확인 필요', 'not-running': 'Docker 엔진 시작 필요', 'image-missing':'격리 이미지 준비 필요' };
+  for (const row of report.rows) {
+    const item = document.createElement('div'); item.className = 'prerequisite-row'; item.dataset.tool = row.id;
+    const title = document.createElement('div'); title.textContent = row.label + (row.required ? '' : ' · 선택');
+    const purpose = document.createElement('small'); purpose.textContent = row.purpose; title.append(purpose);
+    const state = document.createElement('span'); state.className = 'prerequisite-state'; state.dataset.ready = String(row.state === 'ready'); state.textContent = labels[row.state] + (row.version ? ` · ${row.version}` : '');
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = row.state === 'ready' ? '공식 안내' : '설치 안내 열기';
+    button.addEventListener('click', () => busy(button, '여는 중…', () => call(api.openInstallSite(row.id))));
+    item.append(title, state, button); list.append(item);
+  }
+  $('#continue-prerequisites').textContent = report.needsAttention ? '나중에 준비하고 둘러보기' : '준비 완료 · 시작하기';
+  if (!$('#prerequisites-dialog').open) $('#prerequisites-dialog').showModal();
+}
+function closePrerequisites() {
+  sessionStorage.setItem('tower-setup-seen', '1'); $('#prerequisites-dialog').close();
+  if (!localStorage.getItem('tower-tour-v1')) startTour();
+}
+$('#close-prerequisites').addEventListener('click', closePrerequisites);
+$('#continue-prerequisites').addEventListener('click', closePrerequisites);
+$('#prerequisites-dialog').addEventListener('cancel', event => { event.preventDefault(); closePrerequisites(); });
+$('#open-prerequisites').addEventListener('click', () => busy($('#open-prerequisites'), '확인 중…', async () => showPrerequisites(await call(api.prerequisites()))));
+$('#recheck-prerequisites').addEventListener('click', () => busy($('#recheck-prerequisites'), '공구함 확인 중…', async () => showPrerequisites(await call(api.prerequisites()))));
+$('#update-layout').addEventListener('click', () => busy($('#update-layout'), '구조안 정리 중…', async () => { await call(api.reviseLayout(projectData.activeId, $('#image-prompt').value, currentConversation?.id)); renderImage(); }));
 await initialize();

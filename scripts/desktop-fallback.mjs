@@ -140,7 +140,10 @@ export async function checkDesktopFallback({
     path: join(artifacts, "desk-four-providers-before-fallback.png"),
   });
   await page.locator("#controller-mode").selectOption("work");
-  assert.equal(await page.locator("#mutation-option").isChecked(), true);
+  await page.locator('#advanced-validation').evaluate(node=>node.open=true);
+  await page.locator('#mutation-option').check();
+  await page.locator('#advanced-validation').evaluate(node=>node.open=true);
+  await page.locator('#mutation-option').check();
   await writeFile(
     join(root, "package.json"),
     JSON.stringify({
@@ -410,6 +413,8 @@ async function checkAutomaticPool({ application, page, projectId, checks }) {
   await application.evaluate(() => {
     globalThis.__cursorUI.approved = true;
   });
+  await page.locator('#advanced-validation').evaluate(node=>node.open=true);
+  await page.locator('#mutation-option').check();
   await page.locator("#planner-input").fill("Approved Cursor UI fixture");
   await page.locator("#start-workflow").click();
   run = await waitForRun(
@@ -429,7 +434,7 @@ async function checkAutomaticPool({ application, page, projectId, checks }) {
     "grok",
   );
   checks.push(
-    "Explicit native Cursor UI approval permits exactly the intended UI request, with real Node verification and default-enabled mutation flow completing afterward",
+    "Explicit native Cursor UI approval permits exactly the intended UI request, with real Node verification and explicitly selected advanced mutation flow completing afterward",
   );
 }
 async function waitForRun(page, projectId, request, status) {

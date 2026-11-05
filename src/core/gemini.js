@@ -37,6 +37,7 @@ export async function findGemini(directory, developmentRoot = null) {
     directory && join(directory, "tools", "gemini"),
     developmentRoot,
     process.env.APPDATA && join(process.env.APPDATA, "npm"),
+    dirname(dirname(executable)),
     ...(process.env.PATH?.split(delimiter) ?? []),
   ].filter((root) => root && /^(?:[A-Za-z]:[\\/]|\/)/.test(root));
   for (const root of roots) {

@@ -265,13 +265,13 @@
                   </button>
                 </div>
               </div>
-              <div class="mutation-option-row">
+              <details id="advanced-validation"><summary>고급 검증 옵션</summary><div class="mutation-option-row">
                 <span class="log-label">검증 옵션</span>
                 <label class="check-label">
-                  <input id="mutation-option" type="checkbox" checked aria-describedby="mutation-option-hint" /> 뮤테이션 테스트
+                  <input id="mutation-option" type="checkbox" aria-describedby="mutation-option-hint" /> 뮤테이션 테스트
                 </label>
                 <span id="mutation-option-hint" class="hint">기본 테스트 통과 후 실행 · 프로젝트에 test:mutation 필요</span>
-              </div>
+              </div></details>
             </div>
 
             <p id="run-readiness" class="run-readiness">
@@ -525,8 +525,8 @@
             <div class="image-editor">
               <p class="eyebrow">DESIGN ARTIFACT</p>
               <h2 id="image-heading" tabindex="-1">UI 시안 만들기</h2>
-              <p class="secondary">
-                GPT 또는 Gemini 이미지 모델을 선택하세요. 생성 비용은 각 이미지 API 계정에서 처리됩니다.
+              <p class="secondary" id="design-provider-note">
+                기본은 텍스트 구조안입니다. 이미지가 필요할 때만 GPT 또는 Gemini 이미지 생성을 요청하세요.
               </p>
               <div id="design-review-actions" class="design-review-actions" hidden>
                 <p id="design-review-hint" class="hint"></p>
@@ -550,6 +550,7 @@
                 <button id="generate-image" class="primary" type="submit">
                   시안 생성 · API 사용량 발생 ↗
                 </button>
+                <button id="update-layout" type="button">텍스트 구조안에 수정 요청 반영 · API 미사용</button>
               </form>
               <p class="hint">
                 자동 재시도하지 않습니다. 실패 후 재요청하기 전에는 사용 내역을
@@ -567,6 +568,7 @@
                   생성이 완료되면 현재 프로젝트에 저장됩니다.
                 </p>
               </div>
+              <pre id="layout-preview" class="layout-preview" hidden aria-label="텍스트 UI 구조안"></pre>
               <img id="generated-image" hidden="" alt="생성된 UI 시안" />
               <div class="image-result" id="image-result" hidden="">
                 <span>생성 완료 · 프로젝트에 저장됨</span
@@ -1336,6 +1338,15 @@
       </div>
     </dialog>
 
+    <dialog id="prerequisites-dialog" aria-labelledby="prerequisites-title">
+      <header class="dialog-heading"><div><p class="eyebrow">FIRST-RUN TOOL CHECK</p><h2 id="prerequisites-title">작업 전에 공구함을 확인해요</h2><p id="prerequisites-status" class="hint"></p></div><button id="close-prerequisites" type="button" class="icon-button" aria-label="설치 안내 닫기">×</button></header>
+      <p>앱 화면은 바로 사용할 수 있어요. 빠진 도구는 필요한 기능을 실행하기 전에 설치해 주세요. AI CLI는 사용할 AI만 설치하면 됩니다.</p>
+      <div id="prerequisites-list" class="prerequisites-list"></div>
+      <p class="permission-note">설치 버튼은 공식 안내를 기본 브라우저에서 엽니다. 설치 파일이나 원격 스크립트를 자동 실행하지 않습니다. Docker 실행에는 엔진과 로컬 이미지 준비도 필요합니다.</p>
+      <p class="hint">기본 격리 이미지는 Docker를 실행한 뒤 터미널에서 <code>docker pull node:24-bookworm-slim</code>으로 준비합니다. 의존성이 필요한 프로젝트는 준비한 별도 이미지를 설정에서 지정하세요.</p>
+      <div class="action-row"><button id="recheck-prerequisites" type="button" class="primary">설치 후 다시 확인</button><button id="continue-prerequisites" type="button">나중에 준비하고 둘러보기</button></div>
+    </dialog>
+
     <dialog id="guide-dialog" aria-labelledby="guide-title">
       <button id="replay-tour" type="button" class="text-button">첫 실행 둘러보기 ↗</button>
       <header class="dialog-heading">
@@ -1382,12 +1393,20 @@
             <h3>작업 자동화</h3>
             <div id="settings-work-controls" class="settings-fields">
               <label class="check-label"><input id="design-approval" type="checkbox" /> UI 작업 전 시안 생성 및 승인 대기</label>
+              <label>기본 시안 형식<select id="design-mode"><option value="layout">텍스트 구조안 · 이미지 API 미사용</option><option value="image">이미지 시안 · API 비용 발생</option></select></label>
+              <label class="check-label"><input id="mutation-by-default" type="checkbox" /> 새 작업에서 고급 뮤테이션 검사를 기본 선택</label>
               <label>작업당 AI 호출 한도<input id="max-agent-calls" type="number" min="5" max="500" required /></label>
+              <label>하루 전체 AI 호출 한도 (UTC)<input id="max-daily-calls" type="number" min="5" max="5000" required /></label>
+              <label>하루 이미지 생성 한도<input id="max-image-calls" type="number" min="0" max="100" required /></label>
+              <label>API 응답 최대 토큰<input id="max-output-tokens" type="number" min="1024" max="65536" required /></label>
               <label>동시 AI 호출 수<input id="max-concurrent-agents" type="number" min="1" max="4" required /></label>
               <label>GPT API 모델 ID<input id="api-rate-model" maxlength="150" /></label>
               <label>입력 100만 토큰 단가 (USD)<input id="api-input-rate" type="number" min="0" max="10000" step="any" /></label>
               <label>출력 100만 토큰 단가 (USD)<input id="api-output-rate" type="number" min="0" max="10000" step="any" /></label>
               <label>작업당 추정 API 예산 (USD, 0은 해제)<input id="api-budget" type="number" min="0" max="10000" step="any" /></label>
+              <label>하루 텍스트 API 예산 (USD, 0은 해제)<input id="daily-api-budget" type="number" min="0" max="10000" step="any" /></label>
+              <p id="call-quota-status" class="hint"></p>
+              <p class="hint">동시 요청도 호출 전에 횟수와 비용을 예약합니다. 비용은 입력 바이트·최대 출력 토큰·설정 단가에 따른 보수적 추정이며 공급자 청구 상한을 보증하지 않습니다. 비용 예산을 켜면 단가를 확인할 수 없는 이미지 입력·생성을 차단합니다. CLI 구독의 잔여 토큰은 공급자 한도를 따릅니다.</p>
               <label
                 >자동 수정 최대 횟수<input
                   id="max-repair-rounds"
@@ -1419,6 +1438,10 @@
           </section>
           <section>
             <h3>권한과 실행</h3>
+            <button id="open-prerequisites" type="button" class="subtle">설치 도구 확인 · 공식 설치 안내</button>
+            <label>프로젝트 테스트·빌드 실행 위치<select id="execution-backend"><option value="docker">Docker 격리 · 준비되지 않으면 실행 보류</option><option value="host">현재 PC · 신뢰하는 프로젝트만</option></select></label>
+            <label>로컬 Linux 격리 이미지<input id="docker-image" maxlength="200" placeholder="node:24-bookworm-slim" /></label>
+            <p class="hint">격리 실행은 비밀 파일·로그인을 제외한 복사본을 읽기 전용으로 전달합니다. 인터넷과 호스트 쓰기 마운트는 없고 결과 보고서만 제한해 가져옵니다. 의존성은 자동 설치하지 않으며, 필요한 경우 /opt/node_modules를 준비한 별도 이미지를 지정하세요.</p>
             <div id="settings-consents">
               <label class="check-label"
                 ><input id="allow-execution" type="checkbox" />승인한 폴더의 테스트·검증 코드 실행 활성화</label

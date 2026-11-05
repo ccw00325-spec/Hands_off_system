@@ -259,7 +259,7 @@ export function createMascot(stage) {
         ? `${view.labels[view.handoff.from]} → ${view.labels[view.handoff.to]}`
         : "실제 작업 전달과 완료 보고에 맞춰 움직입니다.";
       const readyArtifact = run?.status === "awaiting_design" && run.design?.status === "ready"
-        ? run.design.artifactId : null;
+        ? (run.design.artifactId || run.design.revisionId) : null;
       if (readyArtifact && readyArtifact !== designKey && stage.dataset.motion === "on" && !document.hidden) {
         courierQueue.push({ from: "gpt", to: "design" });
         void deliver();

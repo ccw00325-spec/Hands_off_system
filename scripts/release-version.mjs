@@ -43,7 +43,7 @@ export async function updateVersion(directory, version) {
     await writeFile(
       readmePath,
       readme
-        .replace(/(Windows x64 · v)\d+\.\d+\.\d+/, `$1${version}`)
+        .replace(/(Windows x64(?: · macOS arm64\/x64)? · v)\d+\.\d+\.\d+/, `$1${version}`)
         .replace(
           /release\/CW_Handsoff_sys \d+\.\d+\.\d+\.exe/g,
           `release/CW_Handsoff_sys ${version}.exe`,

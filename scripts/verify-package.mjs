@@ -5,8 +5,10 @@ import { createHash } from "node:crypto";
 const require = createRequire(import.meta.url),
   asar = require("@electron/asar");
 const { getCurrentFuseWire, FuseV1Options } = require("@electron/fuses");
-const output = resolve(process.argv[2] ?? "release");
-const archive = join(output, "win-unpacked", "resources", "app.asar");
+const mac = process.argv.includes('--mac'), arch = process.argv.find(arg => arg.startsWith('--arch='))?.slice(7) ?? process.arch;
+const output = resolve(process.argv.slice(2).find(arg => !arg.startsWith('--')) ?? (mac ? 'release-mac' : 'release'));
+const appDirectory = mac ? join(output, arch === 'arm64' ? 'mac-arm64' : 'mac', 'CW_Handsoff_sys.app') : null;
+const archive = mac ? join(appDirectory, 'Contents', 'Resources', 'app.asar') : join(output, "win-unpacked", "resources", "app.asar");
 const entries = asar.listPackage(archive);
 const allowed = /^(?:|package\.json|src|src\/(?:core|renderer|renderer\/assets|skills)|src\/[^/]+\.(?:js|cjs)|src\/core\/[^/]+\.js|src\/renderer\/[^/]+\.(?:js|css)|src\/renderer\/index\.html|src\/renderer\/assets\/mascot\.png|src\/skills\/(?:fun\.md|gemini-readonly\.toml)|node_modules|node_modules\/jose(?:\/.*)?)$/;
 const assetAllowed = /^(?:src\/renderer\/splash\.html|src\/renderer\/assets\/(?:provider-(?:gpt|claude|gemini|grok)\.svg|providers-NOTICE\.txt|guide(?:\/(?:workspace|roles|output|design|test-report|workflow|services|settings)\.png)?))$/;
@@ -38,7 +40,7 @@ for (const path of legalFiles) {
   if (!(await readFile(path)).equals(asar.extractFile(archive, path))) mismatches.push(path);
 }
 if (pack.license !== 'SEE LICENSE IN LICENSE') mismatches.push('package.json license');
-const executable = join(output, `CW_Handsoff_sys ${pack.version}.exe`);
+const executable = mac ? join(output, `CW_Handsoff_sys-${pack.version}-Mac-${arch}.zip`) : join(output, `CW_Handsoff_sys ${pack.version}.exe`);
 const sha256 = createHash("sha256")
   .update(await readFile(executable))
   .digest("hex");
@@ -51,7 +53,7 @@ const expectedFuses = {
   OnlyLoadAppFromAsar: true,
 };
 const wire = await getCurrentFuseWire(
-  join(output, "win-unpacked", "CW_Handsoff_sys.exe"),
+  mac ? join(appDirectory, 'Contents', 'MacOS', 'CW_Handsoff_sys') : join(output, "win-unpacked", "CW_Handsoff_sys.exe"),
 );
 const fuseSettings = Object.fromEntries(
   Object.entries(expectedFuses).map(([name]) => [
@@ -64,6 +66,7 @@ const fuseMismatches = Object.entries(expectedFuses)
   .map(([name]) => name);
 const report = {
   version: pack.version,
+  platform: mac ? 'darwin' : 'win32', arch: mac ? arch : 'x64',
   matchedSourceFiles: sources.length,
   matchedLegalFiles: legalFiles.length,
   mismatches,

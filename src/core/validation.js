@@ -6,6 +6,8 @@ import { terminateTree } from "./processes.js";
 import { projectEnvironment } from "./child-env.js";
 import { redact } from "./secrets.js";
 import { nodeRuntime } from "./node-runtime.js";
+import { validateInDocker } from './docker-execution.js';
+import { validationResult } from './validation-result.js';
 
 async function projectSecretValues(root) {
   const values = new Set();
@@ -76,6 +78,11 @@ export async function validateProject(
       passed: false,
       summary: `package.json에 ${options.validationScript} 스크립트가 없습니다.`,
     };
+  if (testPlan) for (const file of testPlan.files) {
+    if (!/^tests?\//.test(file)) throw new Error('허용되지 않은 테스트 파일 경로입니다.');
+    await workspace.read(projectId, file, {grantId});
+  }
+  if (options.executionBackend === 'docker') return validateInDocker(workspace, {projectId, grantId, options, signal, onOutput, environment});
   const executable = await nodeRuntime(grant.root);
   if (!executable)
     return {
@@ -179,49 +186,7 @@ export async function validateProject(
     child.once("close", (code) => {
       if (!stopping) {
         publishOutput();
-        const observed = [
-          ...output.matchAll(/^(not ok|ok)\s+\d+\s+-\s+([^\r\n]+)/gm),
-        ].map((match) => ({
-          passed: match[1] === "ok" && !/\s#\s*(?:SKIP|TODO)\b/i.test(match[2]),
-          skipped: /\s#\s*(?:SKIP|TODO)\b/i.test(match[2]),
-          name: match[2],
-        }));
-        const cases = (testPlan?.cases ?? []).map((row) => {
-          const matches = observed.filter(
-            (item) =>
-              item.name === row.id ||
-              item.name.startsWith(row.id + " ") ||
-              item.name.startsWith(row.id + ":"),
-          );
-          return {
-            id: row.id,
-            title: row.title,
-            status: !matches.length
-              ? "not-observed"
-              : matches.some((item) => !item.passed && !item.skipped)
-                ? "failed"
-                : matches.some((item) => item.skipped)
-                  ? "skipped"
-                  : "passed",
-          };
-        });
-        const complete = cases.every((row) => row.status === "passed");
-        finish(null, {
-          configured: true,
-          passed: code === 0 && complete && !outputOverflow,
-          exitCode: code,
-          summary:
-            outputOverflow ? "출력이 검증 한도를 초과했습니다." : code === 0 && complete
-              ? "사용자가 지정한 검증 명령을 통과했습니다."
-              : code === 0
-                ? "명령은 종료했지만 계획한 테스트 일부가 생략됐거나 실행을 확인하지 못했습니다."
-                : "검증 명령이 실패했습니다.",
-          output,
-          command: commandDisplay,
-          startedAt,
-          finishedAt: new Date().toISOString(),
-          cases,
-        });
+        finish(null, validationResult({code, output, overflow:outputOverflow, testPlan, command:commandDisplay, startedAt}));
       }
     });
   });

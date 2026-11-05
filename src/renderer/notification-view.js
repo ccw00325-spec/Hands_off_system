@@ -160,7 +160,7 @@ export function createNotifications(api, onAction) {
       const notices = [];
       if (run.status === "awaiting_design" && run.design?.status === "ready")
         notices.push({
-          key: `${run.id}:design:${run.design.artifactId}`,
+          key: `${run.id}:design:${run.design.artifactId || run.design.revisionId}`,
           message:
             "UI 시안이 준비됐어요. 확인 후 승인하거나 변경을 요청해 주세요.",
           action: "design",

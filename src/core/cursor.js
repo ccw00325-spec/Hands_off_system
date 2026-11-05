@@ -6,9 +6,14 @@ import { RpcProcess } from "./rpc-process.js";
 import { objectJSON } from "./workflow.js";
 import { nativeEnvironment } from "./child-env.js";
 import { providerFailure } from "./provider-errors.js";
+import { findExecutable } from './providers.js';
 
 export async function findCursorLaunch() {
-  if (process.platform !== "win32" || !process.env.LOCALAPPDATA) return null;
+  if (process.platform !== 'win32') {
+    const executable = await findExecutable('agent');
+    return executable ? { executable, prefix: [] } : null;
+  }
+  if (!process.env.LOCALAPPDATA) return null;
   const root = join(process.env.LOCALAPPDATA, "cursor-agent");
   const candidates = [root];
   try {

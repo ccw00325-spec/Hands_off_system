@@ -23,6 +23,7 @@ async function boot() {
   application = await electron.launch({ args: ["."], cwd: resolve("."), env });
   await application.evaluate((_electron,url)=>{
     const p=process.getBuiltinModule('url').fileURLToPath(url),require=process.getBuiltinModule('module').createRequire(p);
+    require(p.replace('codex.js','prerequisites.js')).Prerequisites.prototype.scan=async()=>({rows:[],needsAttention:false,platform:process.platform,arch:process.arch});
     require(p).CodexConnection.prototype.models=async()=>[{id:'fixture-native-model',name:'Fixture model'}];
     require(p).CodexConnection.prototype.status=async()=>({installed:true,connected:true,state:'connected',login:{waiting:false}});
     require(p.replace('codex.js','cursor.js')).CursorConnection.prototype.models=async()=>[{id:'fixture-grok',name:'Cursor fixture model'}];
@@ -87,6 +88,10 @@ try {
     "First-run settings ask optional execution consent; renderer has no Node/process access",
   );
   await page.locator("#allow-execution").check();
+  assert.equal(await page.locator('#execution-backend').inputValue(),'docker');
+  assert.equal(await page.locator('#design-mode').inputValue(),'layout');
+  await page.locator('#execution-backend').selectOption('host');
+  await application.evaluate(({dialog})=>{const original=dialog.showMessageBox;dialog.showMessageBox=(...args)=>args.at(-1)?.title==='현재 PC에서 실행'?Promise.resolve({response:1}):original(...args);});
   assert.equal(await page.locator("#design-approval").isChecked(), true);
   await page.locator("#terminal-font-size").selectOption("14");
   await page.locator("#save-settings").click();
@@ -100,7 +105,7 @@ try {
   const roleBounds=await panel.boundingBox(),closeBounds=await page.locator('#close-roles-outside').boundingBox();
   assert.ok(closeBounds.x>=roleBounds.x+roleBounds.width,'The outside close must remain outside the wider role panel');
   assert.equal(await page.locator('#team-editor input[value=control]').count(),0);
-  assert.equal(await page.locator('#mutation-option').isChecked(),true);
+  assert.equal(await page.locator('#mutation-option').isChecked(),false);
   assert.equal(await page.locator('#team-editor button').count(),0);
   assert.equal(await page.locator('#team-editor [data-agent=gpt] input[value=test]').isChecked(),true);
   assert.equal(await page.locator('#team-editor [data-agent=grok] input[value=debug]').isChecked(),true);
@@ -574,6 +579,7 @@ try {
   await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { "test:mutation": "node fixture-mutation.cjs" } }));
   await writeFile(join(root, "fixture-mutation.cjs"), `require("node:fs").writeFileSync(process.env.TOWER_MUTATION_REPORT,
     JSON.stringify({ files: { "counter.cjs": { mutants: [{ status: "Killed" }] } } }));`);
+  await page.locator('#advanced-validation').evaluate(node=>node.open=true);
   await page.locator("#mutation-option").check();
   await page.evaluate(() => {
     const courier = document.querySelector("#courier");
@@ -598,6 +604,12 @@ try {
   await page.screenshot({ path: join(artifacts, "design-delivery.png") });
   assert.equal((await page.evaluate((id) => window.tower.workflow(id), projectId)).value.tasks.every((task) => task.status === "pending"), true);
   await page.locator("#mission-primary").click();
+  await page.locator('#layout-preview').waitFor();
+  assert.match(await page.locator('#layout-preview').innerText(),/이미지 API 호출 없음/);
+  assert.equal((await application.evaluate(()=>globalThis.designPrompts)).length,0);
+  await page.screenshot({path:join(artifacts,'layout-preview.png')});
+  checks.push('Default UI approval uses a text layout with zero image API calls; an explicit image request converts it to an image preview');
+  await page.locator('#generate-image').click();
   await page.locator("#generated-image").waitFor();
   const draft = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
   await page.locator("#back-to-controller").click();

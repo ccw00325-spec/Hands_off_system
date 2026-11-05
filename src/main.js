@@ -38,6 +38,8 @@ import { AgentChat } from "./core/agent-chat.js";
 import { AuxiliaryServices } from "./core/services.js";
 import {ModelCatalog} from './core/model-catalog.js';
 import { loadLocalWindow } from './core/window-loader.js';
+import { Prerequisites, INSTALL_SITES } from './core/prerequisites.js';
+import { CallQuota } from './core/call-quota.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 app.setName("CW_Handsoff_sys");
@@ -76,6 +78,8 @@ let window,
   browser,
   usage;
 let preferences, conversations, agentChat, auxiliary;
+let prerequisites;
+let quota;
 let restorePromise;
 let gptRestoreState = null;
 let splash,
@@ -219,6 +223,7 @@ async function prepareStartup() {
     projects.list(),
     preferences.get(),
   ]);
+  if (shuttingDown) throw new Error('시작 준비를 취소했습니다.');
   startupProgress(
     28,
     "AI 출석부 확인 중…",
@@ -231,6 +236,9 @@ async function prepareStartup() {
   } catch {}
   const current = await status();
   restored ??= { ...current, browser: await browser.settings() };
+  startupProgress(34, '공구함에 빠진 도구 찾는 중…', 'Git · Node.js · 선택한 AI와 격리 도구를 확인해요.', '설치 도구 확인');
+  const tools = await scanPrerequisites(current, settings, projectData);
+  if (shuttingDown) throw new Error('시작 준비를 취소했습니다.');
   startupProgress(
     40,
     "AI 모델들 집합 중…",
@@ -257,7 +265,14 @@ async function prepareStartup() {
     restored,
     status: current,
     catalog: models,
+    prerequisites: tools,
   };
+}
+async function scanPrerequisites(current, settings, projectData) {
+  const active = projectData.activeId;
+  const team = active ? await roles.getTeam(active) : [];
+  const providers = team.length ? [...new Set(team.map(row => row.provider))].filter(id => id !== 'gpt' || !current.gpt.connected || current.gpt.source === 'codex') : undefined;
+  return prerequisites.scan({ ...current, gpt: current.codex }, { providers, executionBackend: settings.executionBackend, dockerImage:settings.dockerImage });
 }
 async function revealMain() {
   if (!startupPromise) throw new Error("시작 준비를 먼저 완료해야 합니다.");
@@ -350,6 +365,10 @@ async function exclusive(key, action) {
 function generateDesignImage(id, prompt, provider = "gpt", signal) {
   return exclusive("image", async () => {
           const grant = await workspace.grant(id);
+          const settings = await preferences.get();
+          if (settings.apiBudgetUsd > 0 || settings.dailyApiBudgetUsd > 0) throw new Error('이미지 API 비용은 텍스트 단가로 제한할 수 없습니다. 이미지 생성 전 API 예산 설정을 검토하세요. 이미지에는 별도 일일 횟수 한도가 적용됩니다.');
+          const ticket = await quota.admit({runId:'image-' + id, options:settings, image:true});
+          try {
           const result = await images.generate(prompt, provider, signal);
           signal?.throwIfAborted();
           const name = `${randomUUID()}.png`;
@@ -373,6 +392,7 @@ function generateDesignImage(id, prompt, provider = "gpt", signal) {
             path: saved.path,
             hash: saved.hash,
           };
+          } finally { await quota.settle(ticket, 0); }
         });
 }
 async function executionOptions(id) {
@@ -386,6 +406,13 @@ async function executionOptions(id) {
       delivery?.github === true && !delivery.name && !delivery.resolvedName,
     maxRepairRounds: settings.maxRepairRounds,
     maxAgentCalls: settings.maxAgentCalls,
+    maxDailyCalls: settings.maxDailyCalls,
+    dailyApiBudgetUsd: settings.dailyApiBudgetUsd,
+    maxOutputTokens: settings.maxOutputTokens,
+    maxImageCallsPerDay: settings.maxImageCallsPerDay,
+    executionBackend: settings.executionBackend,
+    dockerImage: settings.dockerImage,
+    designMode: settings.designMode,
     maxConcurrentAgents: settings.maxConcurrentAgents,
     apiBudgetUsd: settings.apiBudgetUsd,
     apiInputRate: settings.apiInputRate,
@@ -543,6 +570,8 @@ else {
       if(shuttingDown)return;
       store = new Store(app.getPath("userData"), safeStorage);
       await store.init();
+      prerequisites = new Prerequisites();
+      quota = new CallQuota(store);
       if(shuttingDown)return;
       persistentSession = new PersistentSession(store);
       await persistentSession.open();
@@ -637,6 +666,7 @@ else {
           }),
       );
       workflow.designGenerator = generateDesignImage;
+      workflow.quota = quota;
       agentChat = new AgentChat({
         conversations,
         workspace,
@@ -664,7 +694,20 @@ else {
         const first=!startupPromise;startupPromise??=prepareStartup();const boot=await startupPromise;
         if(first||!mainRevealed)return boot;
         const current=await status();
-        return{projects:await projects.list(),preferences:await preferences.get(),restored:{...current,session:{...current.session,firstLaunch:false},browser:await browser.settings()},status:current,catalog:catalog.snapshot()};
+        return{projects:await projects.list(),preferences:await preferences.get(),restored:{...current,session:{...current.session,firstLaunch:false},browser:await browser.settings()},status:current,catalog:catalog.snapshot(),prerequisites:prerequisites.current};
+      });
+      handle('tower:prerequisites', async () => {
+        for (const connection of [codex, claude, grok, gemini]) { connection.cache = null; }
+        const result = await scanPrerequisites(await status(), await preferences.get(), await projects.list());
+        void refreshCatalog(null, true);
+        return result;
+      });
+      handle('tower:call-quota', () => quota.snapshot());
+      handle('tower:revise-layout', (id, feedback, conversationId) => workflow.reviseDesign(id, feedback, 'gpt', conversationId, 'layout'));
+      handle('tower:open-install-site', async id => {
+        if (!Object.hasOwn(INSTALL_SITES, id)) throw new Error('허용되지 않은 설치 안내입니다.');
+        await browser.open(INSTALL_SITES[id]);
+        return true;
       });
       handle('tower:startup-state',()=>({...startupPhase,mainVisible:mainRevealed}));
       handle('tower:startup-ready',revealMain);
@@ -809,7 +852,7 @@ else {
               defaultId: 0, cancelId: 0, noLink: true,
               title: "프로젝트 코드 실행 승인",
               message: "신뢰하는 프로젝트에서만 코드 실행을 허용하세요.",
-              detail: `${grant.root}\n테스트와 npm 스크립트는 현재 OS 사용자 권한으로 실행됩니다. 프로젝트 코드가 이 사용자가 접근할 수 있는 파일을 읽거나 네트워크에 연결할 수 있습니다.`,
+              detail: `${grant.root}\n` + ((await preferences.get()).executionBackend === 'docker' ? 'Docker에서 비밀 파일을 제외한 복사본으로 실행합니다. 엔진·이미지가 준비되지 않으면 실행하지 않습니다.' : '현재 OS 사용자 권한으로 실행됩니다. 코드가 이 사용자의 파일을 읽거나 네트워크에 연결할 수 있습니다.'),
             });
             if (result.response !== 1) return grant.executionApproved === true;
           }
@@ -820,6 +863,11 @@ else {
       );
       handle("tower:save-preferences", (value) =>
         exclusive("preferences", async () => {
+          const before = await preferences.get();
+          if (value.executionBackend === 'host' && value.allowExecution && (before.executionBackend !== 'host' || !before.allowExecution)) {
+            const consent = await dialog.showMessageBox(window, {type:'warning', title:'현재 PC에서 실행', message:'격리 없이 프로젝트 코드를 실행하시겠습니까?', detail:'신뢰하는 프로젝트에서만 사용하세요. 테스트·npm 스크립트가 현재 사용자의 파일·네트워크에 접근할 수 있습니다.', buttons:['취소', '위험을 이해하고 PC에서 실행'], defaultId:0, cancelId:0, noLink:true});
+            if (consent.response !== 1) throw new Error('PC 직접 실행을 승인하지 않았습니다. Docker 격리를 사용할 수 있습니다.');
+          }
           const saved = await preferences.save(value);
           if (!saved.allowExecution)
             for (const [id, run] of workflow.runs)
@@ -1000,7 +1048,7 @@ else {
       handle("tower:models", () => catalog.rows("gpt"));
       handle("tower:generate-image", (id, prompt, provider, conversationId) =>
         workflow.runs.get(id)?.state.status === "awaiting_design"
-          ? workflow.reviseDesign(id, prompt, provider, conversationId)
+          ? workflow.reviseDesign(id, prompt, provider, conversationId, 'image')
           : generateDesignImage(id, prompt, provider),
       );
       handle("tower:latest-image", async (id) => {

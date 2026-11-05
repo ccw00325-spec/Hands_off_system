@@ -1,9 +1,9 @@
 import { access } from "node:fs/promises";
+import { toolRoots } from './tool-paths.js';
 import {
   join,
   dirname,
   basename,
-  delimiter,
   isAbsolute,
   relative,
 } from "node:path";
@@ -14,7 +14,7 @@ export async function nodeRuntime(excludedRoot = null) {
       ? [dirname(process.execPath)]
       : []),
     process.env.ProgramFiles && join(process.env.ProgramFiles, "nodejs"),
-    ...(process.env.PATH ?? "").split(delimiter),
+    ...await toolRoots('node'),
   ].filter((root) => root && isAbsolute(root));
   for (const root of roots) {
     if (excludedRoot) {

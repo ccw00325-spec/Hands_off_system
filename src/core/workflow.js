@@ -9,6 +9,8 @@ import { compileFunPlan, skillHash } from "./fun-contract.js";
 import { readFile } from "node:fs/promises";
 import { runMutation } from "./mutation.js";
 import { testPlanMarkdown } from "./test-plan.js";
+import { stateHandoff } from './handoff.js';
+import { layoutPreview } from './layout-preview.js';
 
 const ACTIVE = new Set([
   "testing",
@@ -289,8 +291,10 @@ export class Workflow {
     run.activeCalls = (run.activeCalls ?? 0) + 1;
     const panel = usage.byPanel[actor] ??= { calls: 0, input: 0, output: 0, measured: 0 };
     const started = Date.now();
-    let measured = false, attempted = false, actualProvider = provider, actualModel;
+    let measured = false, attempted = false, actualProvider = provider, actualModel, quotaTicket, actualCost;
     const onProviderAttempt = async ({ provider: next }) => {
+      if (quotaTicket) await this.quota?.settle(quotaTicket, actualCost);
+      quotaTicket = null; actualCost = undefined;
       if (attempted && api && !measured) usage.costUnknown = true;
       attempted = false;
       api = next === "gpt" && state.options.gptSource === "api";
@@ -300,11 +304,12 @@ export class Workflow {
       measured = false;
       if (usage.calls >= (state.options.maxAgentCalls ?? Infinity))
         throw new Error("AI 호출 한도에 도달했습니다. 설정에서 한도를 확인한 뒤 새 작업을 시작하세요.");
-      if (api && state.options.apiBudgetUsd > 0) {
+      if (api && (state.options.apiBudgetUsd > 0 || state.options.dailyApiBudgetUsd > 0)) {
         const model = agentOptions(state.options, actor).gptModel;
-        if (model !== state.options.apiRateModel || usage.costUnknown || (usage.estimatedUsd ?? 0) >= state.options.apiBudgetUsd)
+        if (model !== state.options.apiRateModel || usage.costUnknown || (state.options.apiBudgetUsd > 0 && (usage.estimatedUsd ?? 0) >= state.options.apiBudgetUsd))
           throw new Error("GPT API 예산 한도 또는 모델 단가를 확인하세요.");
       }
+      if (this.quota) quotaTicket = await this.quota.admit({ runId: state.id, options: state.options });
       attempted = true;
       usage.calls++;
       panel.calls++;
@@ -329,18 +334,27 @@ export class Workflow {
           (state.options.apiInputRate > 0 || state.options.apiOutputRate > 0)) {
         const cost = (input * state.options.apiInputRate + output * state.options.apiOutputRate) / 1_000_000;
         usage.estimatedUsd = (usage.estimatedUsd ?? 0) + cost;
+        actualCost = cost;
         panel.estimatedUsd = (panel.estimatedUsd ?? 0) + cost;
       } else if (api) usage.costUnknown = true;
+      if (!api) actualCost = 0;
     };
     if (!run.ephemeral) this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
     try {
       const { snapshot, signal, options, designImage, ...rest } = context;
+      const handoff = stateHandoff(state, actor, action, context);
+      if (!run.ephemeral && state.id && state.grantId) {
+        const sequence = (run.handoffSequence = (run.handoffSequence ?? 0) + 1);
+        await this.workspace.write(state.projectId, `.control-tower/runs/${state.id}/handoffs/${sequence}-${actor}.json`, JSON.stringify(handoff, null, 2), {internal:true, grantId:state.grantId, newOnly:true});
+      }
       const payload = {
-        ...redactData(rest), signal, designImage,
+        ...redactData(rest), handoff, signal, designImage,
         snapshot: providerSnapshot(snapshot),
         options: { ...redactData(options), runtimeRoutes: state.options.runtimeRoutes ?? {}, exhaustedProviders: state.options.exhaustedProviders ??= [], cursorUiApproved: state.options.cursorUiApproved ??= [],
           onCursorUiApproved: async key=>{if(!state.options.cursorUiApproved.includes(key))state.options.cursorUiApproved.push(key);},
-          onProviderExhausted: async provider=>{if(!state.options.exhaustedProviders.includes(provider))state.options.exhaustedProviders.push(provider);}, onUsage, onProviderAttempt, onProviderSwitch },
+          onProviderExhausted: async provider=>{if(!state.options.exhaustedProviders.includes(provider))state.options.exhaustedProviders.push(provider);},
+          onApiReservation: async amount => { if (quotaTicket) await this.quota.reserve(quotaTicket, amount, state.options); },
+          onUsage, onProviderAttempt, onProviderSwitch },
       };
       // Plain providers used by embedders/tests do not implement the routing hooks.
       if (!this.providers[actor].routed) await onProviderAttempt({ provider });
@@ -354,6 +368,7 @@ export class Workflow {
       }
       return redactData(result);
     } finally {
+      if (quotaTicket) await this.quota?.settle(quotaTicket, actualCost);
       run.activeCalls--;
       run.callWaiters?.shift()?.();
       if (attempted && api && !measured) usage.costUnknown = true;
@@ -362,7 +377,7 @@ export class Workflow {
       if (!run.ephemeral) this.notify({ type: "workflow", projectId: state.projectId, state: structuredClone(state) });
     }
   }
-  async reviseDesign(projectId, feedback, provider, conversationId) {
+  async reviseDesign(projectId, feedback, provider, conversationId, format) {
     const run = this.runs.get(projectId);
     if (run?.state.status !== "awaiting_design" ||
         conversationId !== run.state.options.conversationId)
@@ -371,12 +386,19 @@ export class Workflow {
       throw new Error("현재 시안을 변경할 수 없습니다.");
     if (typeof feedback !== "string" || feedback.length > 6000 || !["gpt", "gemini"].includes(provider))
       throw new Error("시안 요청 또는 모델을 확인하세요.");
-    run.designBusy = true;
     const { state } = run;
-    state.design = { ...state.design, status: "generating", provider };
+    format ??= state.design.format ?? 'image';
+    if (!['layout', 'image'].includes(format)) throw new Error('시안 형식을 확인하세요.');
+    run.designBusy = true;
+    state.design = { ...state.design, status: "generating", provider, format };
     const notes = [...state.design.feedback, redact(feedback.trim())].filter(Boolean).slice(-5);
     state.design.feedback = notes;
     try {
+      if (format === 'layout') {
+        state.design = { ...state.design, status:'ready', feedback:notes, revisionId:randomUUID(), artifactId:null, hash:null, path:null, previewText:layoutPreview(state.request, state.design.specification, notes) };
+        await this.record(run, 'gpt', '이미지 API 없이 UI 구조안을 준비했습니다. UI 시안에서 확인하고 마음에 들면 ‘이대로 적용’이라고 입력해 주세요.');
+        return state.design;
+      }
       await this.record(run, "gpt", "UI 시안을 만드는 중입니다.");
       const direction = notes.length
         ? "Follow the latest user feedback over earlier visual direction. Keep all functional requirements.\nUser feedback:\n" + notes.join("\n").slice(-4300)
@@ -681,9 +703,9 @@ export class Workflow {
       state.spec,
       { newOnly: true, grantId: state.grantId },
     );
-    if (state.options.designApproval && this.designGenerator && state.tasks.some((task) => task.kind === "ui")) {
+    if (state.options.designApproval && (this.designGenerator || state.options.designMode === 'layout') && state.tasks.some((task) => task.kind === "ui")) {
       state.status = "awaiting_design";
-      state.design = { status: "pending", feedback: [], specification: plan.design ?? plan.spec.slice(0, 4800) };
+      state.design = { status: "pending", format:state.options.designMode ?? 'image', feedback: [], specification: plan.design ?? plan.spec.slice(0, 4800) };
       const approval = new Promise((resolve, reject) => {
         const signal = run.controller.signal;
         const abort = () => reject(signal.reason);

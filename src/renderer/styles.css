@@ -2779,3 +2779,11 @@ body[data-sidebar="off"] .workbench-shell {
 #test-recovery { border-left: 2px solid #d5a45b; padding: 8px 10px; margin-bottom: 12px; overflow-wrap: anywhere; }
 #test-recovery[hidden] { display: none; }
 #test-recovery-details { white-space: pre-wrap; max-height: 12em; overflow: auto; }
+:root .prerequisites-list { display: grid; gap: 10px; margin: 20px 0; }
+:root .prerequisite-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(120px, .7fr) auto; gap: 12px; align-items: center; border-bottom: 1px solid #30343a; padding: 12px 0; }
+:root .prerequisite-row small { display: block; color: #9ba4ac; margin-top: 5px; }
+:root .prerequisite-state[data-ready=true] { color: #85e4bd; }
+:root #prerequisites-dialog { width: min(860px, calc(100vw - 48px)); max-height: 88vh; overflow: auto; padding: 24px 28px; }
+:root #prerequisites-dialog > .dialog-heading { padding: 0 0 24px; }
+@media(max-width:600px) { :root .prerequisite-row { grid-template-columns: 1fr auto; } :root .prerequisite-state { grid-column: 1; } }
+:root .layout-preview { padding: 28px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; max-height: 70vh; max-width: calc(100% - 32px); box-sizing: border-box; text-align: left; overflow: auto; color: #d3e4dd; background: #101714; border-radius: 10px; margin: 16px; }

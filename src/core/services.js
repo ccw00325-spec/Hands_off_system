@@ -11,6 +11,7 @@ import { nodeRuntime } from "./node-runtime.js";
 import { secretFinding } from "./secrets.js";
 import { nativeEnvironment } from "./child-env.js";
 import { digest, relativeFile } from "./workspace.js";
+import { macLoginScript } from './mac-terminal.js';
 
 const execute = promisify(execFile);
 const services = ["github", "vercel", "supabase"];
@@ -158,7 +159,7 @@ export class AuxiliaryServices {
   async login(service) {
     if (!services.includes(service))
       throw new Error("지원하지 않는 서비스입니다.");
-    if (process.platform !== "win32")
+    if (!['win32', 'darwin'].includes(process.platform))
       throw new Error("공식 CLI에서 로그인한 뒤 연결 상태를 다시 확인하세요.");
     if (this.running.size) throw new Error("릴리스가 끝난 뒤 보조 서비스 계정을 변경하세요.");
     if (this.logins.has(service)) return { waiting: true };
@@ -179,6 +180,17 @@ export class AuxiliaryServices {
             "--skip-ssh-key",
           ]
         : ["login"];
+    if (process.platform === 'darwin') {
+      const job = Promise.resolve().then(async () => {
+        let connected = false;
+        try {
+          await this.execute(['/usr/bin/osascript'], macLoginScript(command, args), {timeout:15000});
+          const deadline = Date.now() + 600000;
+          while (Date.now() < deadline && !(connected = Boolean(await this.account(service, command).catch(() => null)))) await new Promise(resolve => setTimeout(resolve, 2500));
+        } finally { this.logins.delete(service); this.notify({type:'service-login', service, connected}); }
+      }).catch(() => {});
+      this.logins.set(service, job); return {waiting:true};
+    }
     // Login needs a visible console for official prompts and device codes.
     const quote = (value) => `'${value.replaceAll("'", "''")}'`;
     const script = `& ${[...command, ...args].map(quote).join(" ")}; exit $LASTEXITCODE`;
