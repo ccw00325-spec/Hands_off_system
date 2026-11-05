@@ -90,7 +90,7 @@ export function mascotState(
 export function createMascot(stage) {
   const carrier = stage.querySelector(".mascot-carrier"),
     toggle = stage.querySelector(".mascot-motion-toggle");
-  let lastKey = null;
+  let lastKey = null, designKey = null;
   let runKey = null,
     courierQueue = [],
     delivering = false;
@@ -106,7 +106,6 @@ export function createMascot(stage) {
       return;
     delivering = true;
     const event = courierQueue.shift();
-    const root = document.querySelector("#workspace-view");
     const source =
       event.from === "gpt"
         ? document.querySelector(".planner .panel-heading")
@@ -114,22 +113,28 @@ export function createMascot(stage) {
             `[data-agent-panel="${event.from}"] .panel-heading`,
           );
     const target =
-      event.to === "gpt"
+      event.to === "design"
+        ? ["#sidebar-images", "#tab-images"].map((selector) => document.querySelector(selector))
+          .find((button) => {
+            const rect = button?.getBoundingClientRect();
+            return rect?.width && rect.top >= 0 && rect.bottom <= window.innerHeight;
+          })
+        : event.to === "gpt"
         ? document.querySelector(".planner .panel-heading")
         : document.querySelector(
             `[data-agent-panel="${event.to}"] .panel-heading`,
           );
-    if (!root || !source || !target) {
+    if (!source || !target || !source.getClientRects().length) {
       delivering = false;
+      void deliver();
       return;
     }
-    const bounds = root.getBoundingClientRect(),
-      from = source.getBoundingClientRect(),
+    const from = source.getBoundingClientRect(),
       to = target.getBoundingClientRect();
-    const x1 = from.left - bounds.left + from.width / 2 - 27,
-      y1 = from.top - bounds.top - 12,
-      x2 = to.left - bounds.left + to.width / 2 - 27,
-      y2 = to.top - bounds.top - 12;
+    const x1 = from.left + from.width / 2 - 27,
+      y1 = from.top - 12,
+      x2 = to.left + to.width / 2 - 27,
+      y2 = to.top - 12;
     courier.hidden = false;
     courier.dataset.from = event.from;
     courier.dataset.to = event.to;
@@ -226,6 +231,13 @@ export function createMascot(stage) {
       stage.querySelector(".mascot-event").textContent = view.handoff
         ? `${view.labels[view.handoff.from]} → ${view.labels[view.handoff.to]}`
         : "실제 작업 전달과 완료 보고에 맞춰 움직입니다.";
+      const readyArtifact = run?.status === "awaiting_design" && run.design?.status === "ready"
+        ? run.design.artifactId : null;
+      if (readyArtifact && readyArtifact !== designKey && stage.dataset.motion === "on" && !document.hidden) {
+        courierQueue.push({ from: "gpt", to: "design" });
+        void deliver();
+      }
+      designKey = readyArtifact;
       if (!view.handoff) {
         carrier.classList.remove("is-delivering");
         lastKey = null;

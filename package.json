@@ -1,6 +1,6 @@
 {
   "name": "cw-handsoff-sys",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "private": true,
   "description": "Local multi-AI engineering workbench with role-based delegation.",
   "type": "module",
@@ -24,14 +24,22 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",
-    "electron": "45.2.1",
+    "electron": "45.2.3",
     "electron-builder": "^26.0.12"
   },
   "build": {
     "appId": "dev.agent.controltower",
     "productName": "CW_Handsoff_sys",
     "files": [
-      "src/**/*",
+      "src/*.js",
+      "src/*.cjs",
+      "src/core/*.js",
+      "src/renderer/*.js",
+      "src/renderer/*.css",
+      "src/renderer/index.html",
+      "src/renderer/assets/mascot.png",
+      "src/skills/fun.md",
+      "src/skills/gemini-readonly.toml",
       "package.json"
     ],
     "win": {

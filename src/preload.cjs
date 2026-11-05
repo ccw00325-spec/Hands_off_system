@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld(
     servicesSave: call("services-save"),
     servicesRetry: call("services-retry"),
     preferences: call("preferences"),
+    projectExecution: call("project-execution"),
     savePreferences: call("save-preferences"),
     conversationIndex: call("conversation-index"),
     conversationHistory: call("conversation-history"),

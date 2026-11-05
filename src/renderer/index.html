@@ -113,6 +113,13 @@
         <button id="new-conversation" class="sidebar-new-chat">
           ＋ 새 대화
         </button>
+        <button id="sidebar-images" class="sidebar-new-chat" type="button" aria-pressed="false">
+          ▧ UI 시안
+        </button>
+        <p id="design-delivery" class="design-delivery" role="status" hidden>
+          <img src="assets/mascot.png" width="30" height="30" alt="" />
+          <span>UI를 확인해보세요!</span>
+        </p>
 
         <div id="sidebar-files" hidden="">
           <p class="hint">폴더를 연결하면 파일을 볼 수 있습니다.</p>
@@ -231,9 +238,6 @@
                     목록 불러오기 ▾
                   </button>
                 </div>
-                <label class="check-label" title="기본 테스트 통과 후 프로젝트의 test:mutation 스크립트를 실행합니다.">
-                  <input id="mutation-option" type="checkbox" /> 뮤테이션 테스트
-                </label>
                 <div class="run-actions controller-send-actions">
                   <button id="start-workflow" class="primary">
                     작업 시작 →</button
@@ -242,6 +246,13 @@
                     응답 중지
                   </button>
                 </div>
+              </div>
+              <div class="mutation-option-row">
+                <span class="log-label">검증 옵션</span>
+                <label class="check-label">
+                  <input id="mutation-option" type="checkbox" aria-describedby="mutation-option-hint" /> 뮤테이션 테스트
+                </label>
+                <span id="mutation-option-hint" class="hint">기본 테스트 통과 후 실행 · 프로젝트에 test:mutation 필요</span>
               </div>
             </div>
 
@@ -490,25 +501,19 @@
               </div>
             </section>
           </div>
-          <div id="courier-layer" aria-hidden="true">
-            <img
-              id="courier"
-              src="assets/mascot.png"
-              alt=""
-              width="54"
-              height="54"
-              hidden=""
-            />
-          </div>
         </div>
         <section id="images-view" hidden="" aria-labelledby="image-heading">
           <div class="image-layout">
             <div class="image-editor">
               <p class="eyebrow">DESIGN ARTIFACT</p>
-              <h2 id="image-heading">UI 시안 만들기</h2>
+              <h2 id="image-heading" tabindex="-1">UI 시안 만들기</h2>
               <p class="secondary">
                 GPT 또는 Gemini 이미지 모델을 선택하세요. 생성 비용은 각 이미지 API 계정에서 처리됩니다.
               </p>
+              <div id="design-review-actions" class="design-review-actions" hidden>
+                <p id="design-review-hint" class="hint"></p>
+                <button id="back-to-controller" type="button">컨트롤 타워로 돌아가기</button>
+              </div>
               <form id="image-form">
                 <label for="image-prompt">만들고 싶은 화면</label
                 ><textarea
@@ -1404,10 +1409,10 @@
             <h3>권한과 실행</h3>
             <div id="settings-consents">
               <label class="check-label"
-                ><input id="allow-execution" type="checkbox" />연결한 프로젝트의
-                테스트·검증 코드 실행에 동의</label
+                ><input id="allow-execution" type="checkbox" />승인한 폴더의 테스트·검증 코드 실행 활성화</label
               >
             </div>
+            <div class="action-row"><button id="project-execution" type="button">현재 폴더 코드 실행 승인</button><span id="project-execution-status" class="hint"></span></div>
             <p class="permission-note">
               테스트·검증 코드는 현재 PC 사용자 권한으로 실행됩니다. 신뢰하는
               프로젝트에서만 허용하세요. 폴더 접근·소스 전송 동의는 프로젝트마다
@@ -1477,5 +1482,8 @@
       </header>
       <pre id="test-report-content"></pre>
     </dialog>
+    <div id="courier-layer" aria-hidden="true">
+      <img id="courier" src="assets/mascot.png" alt="" width="54" height="54" hidden />
+    </div>
   </body>
 </html>

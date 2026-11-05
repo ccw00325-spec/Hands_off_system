@@ -1,3 +1,5 @@
+import { redact } from "./secrets.js";
+
 export async function requestJson(url, options = {}, fetcher = fetch) {
   const response = await fetcher(url, {
     ...options,
@@ -34,7 +36,7 @@ export function publicError(error) {
     return "요청 시간이 초과되었거나 취소되었습니다. 연결 상태를 확인하세요.";
   if (error instanceof TypeError)
     return "공급자에 연결할 수 없습니다. 네트워크 상태를 확인하세요.";
-  return String(error.message || "작업에 실패했습니다.")
+  return redact(String(error.message || "작업에 실패했습니다."))
     .replace(/sk-[A-Za-z0-9_-]+/g, "[보호된 키]")
     .replace(/eyJ[A-Za-z0-9_.-]+/g, "[보호된 토큰]")
     .slice(0, 350);

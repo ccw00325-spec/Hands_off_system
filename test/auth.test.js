@@ -340,3 +340,20 @@ test("sign-out waits for an in-flight refresh then revokes the newest rotating t
   assert.equal(revoked, "latest");
   assert.equal((await store.secrets()).accounts[0].accessToken, undefined);
 });
+
+test("public errors mask provider credentials and authorization headers", async () => {
+  const { publicError } = await import("../src/core/http.js");
+  const samples = [
+    "AIza" + "a".repeat(35),
+    "ghp_" + "b".repeat(24),
+    "ya29." + "c".repeat(25),
+    "sbp_" + "d".repeat(40),
+    "sb_secret_" + "e".repeat(24),
+    "Authorization: Basic " + "Q".repeat(20),
+  ];
+  for (const value of samples) {
+    const result = publicError(new Error("Provider error " + value));
+    assert.ok(result.includes("[보호된 비밀값]"));
+    assert.ok(!result.includes(value));
+  }
+});

@@ -19,6 +19,7 @@ function fixture() {
       accounts: { github: "example" },
       revision: "revision",
       grantId: "grant",
+      deviceBinding: "fixture-device",
     },
   };
   const service = new AuxiliaryServices(
@@ -37,6 +38,7 @@ function fixture() {
       grant: async () => ({ grantId: "grant" }),
     },
     () => {},
+    { identity: async () => "fixture-device" },
   );
   const state = {
     projectId: "abcdefgh-001",
@@ -228,4 +230,66 @@ for (const existing of [false, true]) test("Git push interruption preserves the 
   }
   assert.equal(pushes, 2);
   assert.equal(await git(remote)("rev-list", "--count", "main"), existing ? "2" : "1");
+});
+
+test("copied delivery settings and approvals do not expose the original user's account", async () => {
+  const { service, project, state } = fixture();
+  service.identity = async () => "another-device";
+  service.resolveCommand = async () => null;
+  assert.equal(await service.configuration(state.projectId), null);
+  assert.equal(await service.publish(state), undefined);
+  const status = await service.status(state.projectId);
+  assert.equal(status.reconnectRequired, true);
+  assert.equal(status.config, null);
+  assert.equal(status.result, null);
+  assert.ok(!JSON.stringify(status).includes(project.delivery.accounts.github));
+});
+
+test("GitHub release aborts before repository actions if the pinned credential identifies a different account", async (t) => {
+  const { execFileSync } = await import("node:child_process");
+  try { execFileSync("git", ["--version"]); } catch { t.skip("Git CLI unavailable"); return; }
+  const { service, project, state } = fixture();
+  service.resolveCommand = async () => ["fixture-gh"];
+  const calls = [];
+  service.execute = async (_command, args, options) => {
+    calls.push(args);
+    if (args[0] === "api") return options?.env?.GH_TOKEN ? "unexpected-account" : "example";
+    if (args[0] === "auth") return "fixture-token";
+    throw new Error("Unexpected repository command");
+  };
+  await assert.rejects(service.pushGitHub(state.projectId, project.delivery, ".", "test", state), /계정과 다릅니다/);
+  assert.deepEqual(calls[1], ["auth", "token", "--hostname", "github.com", "--user", "example"]);
+  assert.ok(calls.every((args) => args[0] !== "repo"));
+});
+
+test("auxiliary CLI login is confirmed only after browser flow and native account verification", { skip: process.platform !== "win32" }, async () => {
+  const { service } = fixture();
+  const eventQueue = [];
+  service.notify = (event) => eventQueue.push(event);
+  service.resolveCommand = async (name) => [`C:/fixture/${name}.exe`];
+  for (const name of ["github", "vercel", "supabase"]) {
+    let open;
+    const complete = new Promise((resolve) => { open = resolve; });
+    service.execute = async (_command, args) => {
+      if (args[0] === "-NoProfile") {
+        const launcher = Buffer.from(args[2], "base64").toString("utf16le");
+        const code = launcher.match(/'-EncodedCommand','([^']+)'/)[1];
+        const script = Buffer.from(code, "base64").toString("utf16le");
+        assert.match(script, new RegExp(name + "\\.exe"));
+        if (name === "github") assert.ok(script.includes("'--web'"));
+        else assert.ok(script.includes("'login'"));
+        await complete;
+        return "";
+      }
+      return name === "supabase" ? "[]" : "fixture-account";
+    };
+    assert.deepEqual(await service.login(name), { waiting: true });
+    const login = service.logins.get(name);
+    assert.ok(login);
+    assert.equal(eventQueue.length, 0);
+    open();
+    await login;
+    assert.equal(service.logins.has(name), false);
+    assert.deepEqual(eventQueue.pop(), {type: "service-login", service: name, connected: true});
+  }
 });

@@ -330,7 +330,7 @@ export class Workflow {
   async reviseDesign(projectId, feedback, provider, conversationId) {
     const run = this.runs.get(projectId);
     if (run?.state.status !== "awaiting_design" ||
-        (conversationId && conversationId !== run.state.options.conversationId))
+        conversationId !== run.state.options.conversationId)
       throw new Error("시안 승인을 기다리는 작업이 없습니다.");
     if (run.designBusy || !["pending", "ready", "error"].includes(run.state.design?.status))
       throw new Error("현재 시안을 변경할 수 없습니다.");
@@ -339,12 +339,16 @@ export class Workflow {
     run.designBusy = true;
     const { state } = run;
     state.design = { ...state.design, status: "generating", provider };
+    const notes = [...state.design.feedback, redact(feedback.trim())].filter(Boolean).slice(-5);
+    state.design.feedback = notes;
     try {
       await this.record(run, "gpt", "UI 시안을 만드는 중입니다.");
-      const notes = [...state.design.feedback, redact(feedback.trim())].filter(Boolean).slice(-5);
+      const direction = notes.length
+        ? "Follow the latest user feedback over earlier visual direction. Keep all functional requirements.\nUser feedback:\n" + notes.join("\n").slice(-4300)
+        : "Default visual direction, unless the request specifies a style: use a clear primary task, readable typography, intentional spacing and one confident accent. Choose a composition that fits this product and platform. Show meaningful states with legible Korean when appropriate. Use expressive shape or illustration only when it serves the task. Keep text contrast and touch targets accessible. Avoid generic dashboard cards, ornamental gradients and fake device frames.";
       const prompt = ("Create a product UI mockup based on this request and specification.\n" +
         state.request.slice(0, 1800) + "\n" + JSON.stringify(state.design.specification).slice(0, 4800) +
-        "\nLatest visual adjustments: " + notes.join("\n").slice(-4300)).slice(0, 12000);
+        "\n" + direction).slice(0, 12000);
       const result = await this.designGenerator(projectId, prompt, provider, run.controller.signal);
       run.controller.signal.throwIfAborted();
       state.design = { ...state.design, status: "ready", feedback: notes, artifactId: result.artifactId, path: result.path, hash: result.hash };
@@ -653,7 +657,7 @@ export class Workflow {
         };
       });
       void approval.catch(() => {});
-      void this.reviseDesign(state.projectId, "", state.options.imageProvider ?? "gpt").catch(() => {});
+      void this.reviseDesign(state.projectId, "", state.options.imageProvider ?? "gpt", state.options.conversationId).catch(() => {});
       await approval;
       run.controller.signal.throwIfAborted();
     }

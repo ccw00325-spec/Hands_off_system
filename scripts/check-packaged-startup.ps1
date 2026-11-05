@@ -1,13 +1,20 @@
+#Requires -Version 7.4
+param([string]$OutputDirectory = 'release', [switch]$Portable)
 $ErrorActionPreference = 'Stop'
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$executable = Join-Path $workspace 'release/win-unpacked/CW_Handsoff_sys.exe'
+$output = (Resolve-Path (Join-Path $workspace $OutputDirectory)).Path
 $version = (Get-Content (Join-Path $workspace 'package.json') -Raw | ConvertFrom-Json).version
+$portableExe = Join-Path $output "CW_Handsoff_sys $version.exe"
+$unpackedExe = Join-Path $output 'win-unpacked/CW_Handsoff_sys.exe'
+$executable = if ($Portable) { $portableExe } else { $unpackedExe }
 $profile = Join-Path $workspace ('artifacts/packaged-profile-' + [guid]::NewGuid().ToString())
-$report = [ordered]@{ passed = $false; rendererIPCInitialized = $false; productVersion = (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion; isolatedProfile = $true; credentialVaultCopied = $false; portableSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $workspace "release/CW_Handsoff_sys $version.exe")).Hash.ToLowerInvariant() }
+$report = [ordered]@{ passed = $false; rendererIPCInitialized = $false; productVersion = (Get-Item -LiteralPath $unpackedExe).VersionInfo.ProductVersion; isolatedProfile = $true; credentialVaultCopied = $false; portableSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $portableExe).Hash.ToLowerInvariant() }
 $process = $null
 $null = New-Item -ItemType Directory -Path $profile
 try {
-  $process = Start-Process -FilePath $executable -ArgumentList ('--user-data-dir="' + $profile + '"') -WorkingDirectory $workspace -WindowStyle Hidden -PassThru
+  $portableTemp = Join-Path $profile 'portable-temp'
+  $null = New-Item -ItemType Directory -Path $portableTemp
+  $process = Start-Process -Environment @{ TEMP=$portableTemp; TMP=$portableTemp } -FilePath $executable -ArgumentList ('--user-data-dir="' + $profile + '"') -WorkingDirectory $workspace -WindowStyle Hidden -PassThru
   $deadline = [DateTime]::UtcNow.AddSeconds(90)
   while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath (Join-Path $profile 'projects.json'))) {
     if ($process.HasExited) { throw 'Packaged app exited before renderer IPC initialization.' }
@@ -15,7 +22,12 @@ try {
   }
   $report.rendererIPCInitialized = Test-Path -LiteralPath (Join-Path $profile 'projects.json')
   $report.credentialVaultCopied = Test-Path -LiteralPath (Join-Path $profile 'vault.enc')
-  $report.passed = $report.rendererIPCInitialized -and -not $report.credentialVaultCopied -and $report.productVersion.StartsWith($version + '.')
+  if ($Portable) {
+    $expected = (Get-FileHash -LiteralPath (Join-Path $output 'win-unpacked/resources/app.asar')).Hash
+    $payload = Get-ChildItem -LiteralPath $portableTemp -Filter 'app.asar' -Recurse -File | Select-Object -First 1
+    $report.portablePayloadMatches = $null -ne $payload -and (Get-FileHash -LiteralPath $payload.FullName).Hash -eq $expected
+  }
+  $report.passed = (-not $Portable -or $report.portablePayloadMatches) -and $report.rendererIPCInitialized -and -not $report.credentialVaultCopied -and $report.productVersion.StartsWith($version + '.')
 } finally {
   try {
     if ($process -and -not $process.HasExited) {

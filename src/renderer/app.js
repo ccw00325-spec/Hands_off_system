@@ -154,9 +154,10 @@ function renderProjects(data) {
   $("#project-title").textContent = activeProject().title;
   document.title = `${activeProject().title} — CW_Handsoff_sys`;
   resultImage = resultCache.get(data.activeId) ?? null;
-  renderImage();
   linkedFolder = null;
   currentRun = null;
+  renderDesignDelivery();
+  renderImage();
   void refreshWorkspace();
   void loadConversation();
   void call(api.servicesResult(roleProject))
@@ -178,18 +179,28 @@ function renderProjects(data) {
       .catch((error) => toast(error.message, "error"));
 }
 function renderImage() {
-  const currentGenerating = generationProject === projectData?.activeId;
-  $("#image-empty").hidden = Boolean(resultImage);
-  $("#generated-image").hidden = !resultImage;
-  $("#image-result").hidden = !resultImage;
-  if (resultImage) $("#generated-image").src = resultImage.dataUrl;
+  const design = currentRun?.status === "awaiting_design" ? currentRun.design : null;
+  const currentGenerating = generationProject === projectData?.activeId || ["pending", "generating"].includes(design?.status);
+  const preview = !design || (design.status === "ready" && resultImage?.artifactId === design.artifactId)
+    ? resultImage : null;
+  $("#image-empty").hidden = Boolean(preview);
+  $("#generated-image").hidden = !preview;
+  $("#image-result").hidden = !preview;
+  if (preview) {
+    if ($("#generated-image").getAttribute("src") !== preview.dataUrl) $("#generated-image").src = preview.dataUrl;
+  }
   else $("#generated-image").removeAttribute("src");
   $("#image-empty h3").textContent = currentGenerating
     ? "시안을 생성하고 있습니다…"
-    : "시안을 이곳에서 확인합니다.";
+    : design?.status === "error" ? "시안을 만들지 못했습니다." : "시안을 이곳에서 확인합니다.";
   $("#image-empty p").textContent = currentGenerating
     ? "응답을 기다리고 있습니다. 완료 전까지 생성 완료로 표시하지 않습니다."
-    : "생성이 완료되면 현재 프로젝트에 저장됩니다.";
+    : design?.status === "error" ? "API 키와 사용 내역을 확인한 뒤 다시 생성하세요." : "생성이 완료되면 현재 프로젝트에 저장됩니다.";
+  $("#design-review-actions").hidden = !design;
+  $("#design-review-hint").textContent = preview && design
+    ? "마음에 들면 컨트롤 타워에서 ‘이대로 적용’을 보내세요. 수정할 부분은 아래에 적어 주세요."
+    : "시안을 검토하고 승인하면 구현을 시작합니다.";
+  $("#image-prompt").required = !design;
 }
 async function refreshStatus() {
   const status = await call(api.status());
@@ -532,7 +543,11 @@ $("#image-provider").addEventListener("change", () => {
   if (!imageKeyReady() || (selectedImageProvider() === "gemini" && connection?.gemini?.installed && !connection.gemini.connected))
     connectImageProvider();
 });
-$("#open-run-design").addEventListener("click", () => view(true));
+function openDesign() {
+  view(true);
+  $("#image-heading").focus();
+}
+$("#open-run-design").addEventListener("click", openDesign);
 function view(images) {
   $("#workspace-view").hidden = images;
   $("#images-view").hidden = !images;
@@ -540,9 +555,23 @@ function view(images) {
   $("#tab-workspace").setAttribute("aria-selected", String(!images));
   $("#tab-images").classList.toggle("selected", images);
   $("#tab-images").setAttribute("aria-selected", String(images));
+  $("#sidebar-images").setAttribute("aria-pressed", String(images));
+  renderDesignDelivery();
+}
+function renderDesignDelivery() {
+  const ready = currentRun?.status === "awaiting_design" && currentRun.design?.status === "ready";
+  const show = ready && $("#images-view").hidden;
+  $("#design-delivery").hidden = !show;
+  if (show) $("#sidebar-images").setAttribute("aria-describedby", "design-delivery");
+  else $("#sidebar-images").removeAttribute("aria-describedby");
 }
 $("#tab-workspace").addEventListener("click", () => view(false));
-$("#tab-images").addEventListener("click", () => view(true));
+$("#tab-images").addEventListener("click", openDesign);
+$("#sidebar-images").addEventListener("click", openDesign);
+$("#back-to-controller").addEventListener("click", () => {
+  view(false);
+  $("#planner-input").focus();
+});
 $("#image-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (generationProject !== null) return;
@@ -555,7 +584,10 @@ $("#image-form").addEventListener("submit", async (event) => {
         api.generateImage(projectId, $("#image-prompt").value, selectedImageProvider(), currentConversation?.id),
       );
       resultCache.set(projectId, result);
-      if (projectData.activeId === projectId) resultImage = result;
+      if (projectData.activeId === projectId) {
+        resultImage = result;
+        $("#image-prompt").value = "";
+      }
       toast("시안 생성이 완료되어 요청한 프로젝트에 저장했습니다.", "success");
     } finally {
       generationProject = null;
@@ -622,6 +654,15 @@ async function initialize() {
     );
   } else {
     api.onEvent(async (event) => {
+      if (event.type === "service-login") {
+        if ($("#services-dialog").open)
+          void loadServices().then(() => {
+            $("#services-result").textContent = event.connected
+              ? `${event.service} CLI 계정 연결을 확인했습니다.`
+              : "로그인을 확인하지 못했습니다. 공식 CLI 또는 브라우저에서 로그인 상태를 확인하세요.";
+          }).catch((error) => toast(error.message, "error"));
+        return;
+      }
       if (
         event.type === "delivery" &&
         event.projectId === projectData?.activeId
@@ -813,6 +854,7 @@ function updateReadiness() {
     autoQuestion = false;
   }
   const question = mode.value === "question";
+  $("#mutation-option").disabled = question;
   const needed = [];
   if (!linkedFolder) needed.push("프로젝트 폴더 연결");
   if (!teamConfig || roleSaving) needed.push("역할 배치 확인");
@@ -844,7 +886,11 @@ function updateReadiness() {
   $("#stop-controller-chat").hidden = !pending;
   $("#start-workflow").disabled =
     needed.length > 0 || pending || !$("#planner-input").value.trim();
-  $("#start-workflow").textContent = currentRun?.status === "awaiting_design" && /^이대로\s*적용[.!]?$/.test($("#planner-input").value.trim()) ? "시안 승인 ↑" : question ? "질문 보내기 ↑" : "작업 요청 ↑";
+  const request = $("#planner-input").value.trim();
+  const reviewingDesign = currentRun?.status === "awaiting_design";
+  $("#start-workflow").textContent = reviewingDesign && /^이대로\s*적용[.!]?$/.test(request) ? "시안 승인 ↑"
+    : reviewingDesign && /^시안\s*수정\s*[:：]/.test(request) ? "시안 수정 요청 ↑"
+    : question ? "질문 보내기 ↑" : "작업 요청 ↑";
   $("#stop-workflow").hidden = !active;
   $("#choose-folder").disabled = active;
   $("#restore-verified").disabled = active;
@@ -852,7 +898,7 @@ function updateReadiness() {
   $("#run-readiness").textContent = needed.length
     ? "연결 필요: " + [...new Set(needed)].join(" · ")
     : currentRun?.status === "awaiting_design"
-      ? "UI 시안 승인 대기 · 시안을 보고 ‘이대로 적용’이라고 입력하세요."
+      ? "UI 시안 검토 · ‘이대로 적용’으로 승인하거나 ‘시안 수정: 바꿀 내용’을 입력하세요."
       : active
       ? "작업 진행 중 · 질문은 별도 응답합니다. 변경 요청은 작업 종료 또는 중지 후 보낼 수 있습니다."
       : question
@@ -985,9 +1031,11 @@ function renderWorkflow(run) {
   const awaitingDesign = run?.status === "awaiting_design";
   $("#design-approval-banner").hidden = !awaitingDesign;
   $("#design-approval-status").textContent = ({
-    ready: "UI 시안을 한번 확인해 주시겠습니까? 마음에 들면 ‘이대로 적용’이라고 입력해 주세요.",
+    ready: "UI 시안을 확인해 보세요. ‘이대로 적용’으로 승인하거나 ‘시안 수정: 바꿀 내용’을 보내세요.",
     error: "시안을 만들지 못했습니다. UI 시안에서 API 키를 연결하거나 다시 생성하세요.",
   })[run?.design?.status] ?? "UI 시안을 만드는 중입니다.";
+  renderDesignDelivery();
+  renderImage();
   if (awaitingDesign && run.design?.status === "ready" && resultImage?.artifactId !== run.design.artifactId)
     void loadApprovedPreview(run);
   $("#rollback-banner").hidden = !(run?.batchRollback && ["needs_attention", "awaiting_validation", "cancelled", "interrupted"].includes(run.status) &&
@@ -1117,7 +1165,7 @@ $("#start-workflow").addEventListener("click", () =>
       }
     }
     await loadConversation(conversationId);
-    if (currentRun?.status === "awaiting_design" && /마음에\s*안|다시\s*만들|시안\s*수정/.test(message)) view(true);
+    if (currentRun?.status === "awaiting_design" && /마음에\s*안|다시\s*만들|시안\s*수정/.test(message)) openDesign();
   }),
 );
 $("#stop-workflow").addEventListener("click", () =>
@@ -1919,8 +1967,27 @@ document
 $("#planner-input").addEventListener("input", updateReadiness);
 $("#controller-mode").addEventListener("change", () => {
   autoQuestion = false;
-  $("#mutation-option").disabled = $("#controller-mode").value !== "work";
   updateReadiness();
+});
+let executionApproved = false;
+async function refreshProjectExecution() {
+  const project = projectData?.activeId;
+  const linked = Boolean(projectData && activeProject()?.workspace);
+  const button = $("#project-execution");
+  const approved = linked ? await call(api.projectExecution(project)).catch(() => false) : false;
+  if (projectData?.activeId !== project) return;
+  executionApproved = approved;
+  button.disabled = !linked;
+  button.textContent = approved ? "현재 폴더 실행 승인 철회" : "현재 폴더 코드 실행 승인";
+  $("#project-execution-status").textContent = !linked ? "작업 폴더를 먼저 연결하세요." : approved ? "현재 폴더 승인됨" : "현재 폴더 미승인";
+}
+$("#project-execution").addEventListener("click", () => {
+  const project = projectData?.activeId;
+  void busy($("#project-execution"), "승인 확인 중…", () => call(api.projectExecution(project, !executionApproved)))
+    .finally(refreshProjectExecution);
+});
+$("#settings-dialog").addEventListener("toggle", (event) => {
+  if (event.newState === "open") void refreshProjectExecution();
 });
 $("#open-settings").addEventListener("click", async () => {
   preferences = await call(api.preferences());
@@ -2206,13 +2273,13 @@ for (const yes of [false, true]) {
 let servicesProjectId;
 async function loadServices() {
   const id = servicesProjectId;
-  const { accounts, config, name, result } = await call(api.servicesStatus(id));
+  const { accounts, config, name, result, reconnectRequired } = await call(api.servicesStatus(id));
   if (id !== servicesProjectId) return;
   for (const [service, status] of Object.entries(accounts)) {
     $(`#service-${service}`).textContent =
-      status.account ??
+      status.waiting ? "브라우저 로그인 대기 중…" : status.account ??
       (status.installed ? "로그인 필요" : "공식 CLI 설치 필요");
-    $(`[data-service-login="${service}"]`).disabled = !status.installed;
+    $(`[data-service-login="${service}"]`).disabled = !status.installed || Boolean(status.waiting);
   }
   $("#service-auto-github").checked = config?.github ?? false;
   $("#service-auto-vercel").checked = config?.vercel ?? false;
@@ -2229,6 +2296,7 @@ async function loadServices() {
       : "Supabase 연결을 확인하려면 공식 CLI를 설치하세요.";
   renderApprovalPolicy(config);
   renderDelivery(result);
+  if (reconnectRequired) $("#services-result").textContent = "이 PC에서 이전 배포 설정을 사용할 수 없습니다. 현재 계정으로 대상과 승인 옵션을 다시 저장하세요.";
 }
 
 function renderApprovalPolicy(config) {
@@ -2268,9 +2336,12 @@ for (const button of document.querySelectorAll("[data-service-login]")) {
   button.addEventListener("click", () =>
     busy(button, "여는 중…", async () => {
       await call(api.servicesLogin(button.dataset.serviceLogin));
-      $("#services-result").textContent =
-        "로그인 창에서 완료한 뒤 연결 상태를 다시 확인하세요.";
-    }),
+      $("#services-result").textContent = "공식 브라우저 로그인 중 · 완료하면 계정 연결을 자동 확인합니다.";
+    }).then(async () => {
+      const { accounts } = await call(api.servicesStatus(servicesProjectId));
+      const status = accounts[button.dataset.serviceLogin];
+      button.disabled = !status.installed || Boolean(status.waiting);
+    }).catch((error) => toast(error.message, "error")),
   );
 }
 $("#services-form").addEventListener("submit", (event) => {

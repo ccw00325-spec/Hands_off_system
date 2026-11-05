@@ -1,17 +1,20 @@
 import { createRequire } from "node:module";
 import { readFile, readdir, stat, writeFile, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 const require = createRequire(import.meta.url),
   asar = require("@electron/asar");
 const { getCurrentFuseWire, FuseV1Options } = require("@electron/fuses");
-const archive = resolve("release/win-unpacked/resources/app.asar");
+const output = resolve(process.argv[2] ?? "release");
+const archive = join(output, "win-unpacked", "resources", "app.asar");
 const entries = asar.listPackage(archive);
-const unwanted = entries.filter((path) =>
-  /@anthropic-ai|@modelcontextprotocol|\.runtime|vault\.enc|smoke-profile|[\\/]\.tools[\\/]/.test(
-    path,
-  ),
-);
+const allowed = /^(?:|package\.json|src|src\/(?:core|renderer|renderer\/assets|skills)|src\/[^/]+\.(?:js|cjs)|src\/core\/[^/]+\.js|src\/renderer\/[^/]+\.(?:js|css)|src\/renderer\/index\.html|src\/renderer\/assets\/mascot\.png|src\/skills\/(?:fun\.md|gemini-readonly\.toml)|node_modules|node_modules\/jose(?:\/.*)?)$/;
+const unwanted = entries.filter((entry) => {
+  const path = entry.replaceAll("\\", "/").replace(/^\//, "");
+  const linked = Boolean(path && asar.statFile(archive, path.split("/").join(sep), false).link);
+  return linked || !allowed.test(path) ||
+    /(?:^|\/)(?:\.env(?:\.[^/]*)?|vault[^/]*|auth\.json|oauth_creds\.json|credentials[^/]*|[^/]+\.(?:pem|pfx|enc))(?:\/|$)/i.test(path);
+});
 async function files(directory) {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -29,7 +32,7 @@ for (const path of sources) {
   if (!native.equals(packed)) mismatches.push(path);
 }
 const pack = JSON.parse(asar.extractFile(archive, "package.json"));
-const executable = resolve(`release/CW_Handsoff_sys ${pack.version}.exe`);
+const executable = join(output, `CW_Handsoff_sys ${pack.version}.exe`);
 const sha256 = createHash("sha256")
   .update(await readFile(executable))
   .digest("hex");
@@ -42,7 +45,7 @@ const expectedFuses = {
   OnlyLoadAppFromAsar: true,
 };
 const wire = await getCurrentFuseWire(
-  resolve("release/win-unpacked/CW_Handsoff_sys.exe"),
+  join(output, "win-unpacked", "CW_Handsoff_sys.exe"),
 );
 const fuseSettings = Object.fromEntries(
   Object.entries(expectedFuses).map(([name]) => [

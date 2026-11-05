@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { validateProject } from "./validation.js";
+import { redact } from "./secrets.js";
+
+const STATUSES = new Set(["Killed", "Survived", "NoCoverage", "Timeout", "CompileError", "RuntimeError", "Ignored", "Pending"]);
 
 export async function runMutation(workspace, context, validate = (request) => validateProject(workspace, request)) {
   const { projectId, grantId, options } = context;
@@ -16,7 +19,7 @@ export async function runMutation(workspace, context, validate = (request) => va
     options: { ...options, testPlan: null, validationScript: "test:mutation" },
   });
   if (!result.passed)
-    return { ...result, status: "blocked" };
+    return { ...result, output: undefined, status: "blocked" };
   let report;
   try {
     report = JSON.parse(
@@ -32,8 +35,7 @@ export async function runMutation(workspace, context, validate = (request) => va
   for (const [file, data] of Object.entries(report?.files ?? {})) {
     if (!Array.isArray(data?.mutants)) continue;
     for (const mutant of data.mutants) {
-      const status =
-        typeof mutant?.status === "string" ? mutant.status.slice(0, 40) : "Unknown";
+      const status = STATUSES.has(mutant?.status) ? mutant.status : "Unknown";
       identities.push(JSON.stringify([
         file,
         mutant?.location,
@@ -44,11 +46,11 @@ export async function runMutation(workspace, context, validate = (request) => va
       counts[status] = (counts[status] ?? 0) + 1;
       if (status !== "Killed" && findings.length < 30)
         findings.push({
-          file: file.slice(0, 500),
+          file: redact(file).slice(0, 500),
           line: Number(mutant?.location?.start?.line) || null,
           status,
-          operator: String(mutant?.mutatorName ?? "").slice(0, 100),
-          replacement: String(mutant?.replacement ?? "").slice(0, 200),
+          operator: redact(String(mutant?.mutatorName ?? "")).slice(0, 100),
+          replacement: redact(String(mutant?.replacement ?? "")).slice(0, 200),
         });
     }
   }

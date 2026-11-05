@@ -130,3 +130,32 @@ test("snapshots exclude environment credentials and vendor folders", async (t) =
   );
   assert.equal(snapshot.truncated, false);
 });
+
+test("execution approval belongs to one folder grant and never carries to a replacement", async (t) => {
+  const { workspace, id, root, outside } = await fixture(t);
+  const original = await workspace.grant(id);
+  assert.notEqual(original.executionApproved, true);
+  await workspace.setExecutionApproval(id, original.grantId, true);
+  assert.equal((await workspace.grant(id)).executionApproved, true);
+  await workspace.setExecutionApproval(id, original.grantId, false);
+  assert.equal((await workspace.grant(id)).executionApproved, false);
+  const next = await workspace.prepare(id, outside);
+  await workspace.consent(id, next.ticket, true);
+  assert.notEqual((await workspace.grant(id)).executionApproved, true);
+  await assert.rejects(workspace.setExecutionApproval(id, original.grantId, true));
+  assert.notEqual((await workspace.grant(id)).root, root);
+});
+
+test("account configuration locations cannot be granted, browsed, or directly read", async (t) => {
+  const { workspace, id, root } = await fixture(t);
+  const { homedir } = await import("node:os");
+  await assert.rejects(workspace.prepare(id, homedir()), /인증 데이터/);
+  for (const [folder, file] of [[".config", "hosts.yml"], [".supabase", "access-token"], [".vercel", "auth.json"]]) {
+    const profile = join(root, folder);
+    await mkdir(profile);
+    await writeFile(join(profile, file), "fixture");
+    await assert.rejects(workspace.prepare(id, profile), /인증 데이터/);
+    await assert.rejects(workspace.read(id, `${folder}/${file}`), /허용되지/);
+    assert.ok(!(await workspace.tree(id)).files.some((row) => row.path.startsWith(folder)));
+  }
+});

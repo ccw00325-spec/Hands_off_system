@@ -1,3 +1,4 @@
+import { deviceBinding } from "./device-binding.js";
 import { pushVerifiedCommit } from "./release-commit.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -89,24 +90,39 @@ async function run(
 }
 
 export class AuxiliaryServices {
-  constructor(store, projects, workspace, notify) {
-    Object.assign(this, { store, projects, workspace, notify });
+  constructor(store, projects, workspace, notify, { resolveCommand = commandFor, execute = run, identity = deviceBinding } = {}) {
+    Object.assign(this, { store, projects, workspace, notify, resolveCommand, execute, identity });
     this.running = new Set();
+    this.logins = new Map();
   }
 
-  async account(service, command) {
+  async account(service, command, options) {
     if (service === "github")
-      return run(command, [
+      return this.execute(command, [
         "api",
         "--hostname",
         "github.com",
         "user",
         "--jq",
         ".login",
-      ]);
-    if (service === "vercel") return run(command, ["whoami"]);
-    await run(command, ["projects", "list", "--output", "json"]);
+      ], options);
+    if (service === "vercel") return this.execute(command, ["whoami"], options);
+    await this.supabaseProjects(command);
     return "연결됨";
+  }
+
+  async supabaseProjects(command) {
+    const projects = JSON.parse(await this.execute(command, ["projects", "list", "--output", "json"]));
+    if (!Array.isArray(projects)) throw new Error("Supabase 프로젝트 목록을 확인할 수 없습니다.");
+    return projects;
+  }
+
+  async configuration(id, project) {
+    project ??= this.projects.find(await this.projects.list(), id);
+    const config = project.delivery;
+    if (!config || config.deviceBinding !== await this.identity()) return null;
+    const grant = await this.workspace.grant(id, config.grantId).catch(() => null);
+    return grant?.grantId === config.grantId ? config : null;
   }
 
   async status(id) {
@@ -114,17 +130,19 @@ export class AuxiliaryServices {
     const accounts = Object.fromEntries(
       await Promise.all(
         services.map(async (service) => {
-          const command = await commandFor(service);
+          const command = await this.resolveCommand(service);
           const account = command
             ? await this.account(service, command).catch(() => null)
             : null;
-          return [service, { installed: Boolean(command), account }];
+          return [service, { installed: Boolean(command), account, waiting: this.logins.has(service) }];
         }),
       ),
     );
+    const config = await this.configuration(id, project);
     return {
       accounts,
-      config: project.delivery ?? null,
+      config,
+      reconnectRequired: Boolean(project.delivery && !config),
       name: repositoryName(project.title, id),
       result: await this.result(id),
     };
@@ -132,17 +150,22 @@ export class AuxiliaryServices {
 
   async result(id) {
     const project = this.projects.find(await this.projects.list(), id);
+    const config = await this.configuration(id, project);
     const result = await this.store.read(`delivery-${id}`, null);
-    return result?.pending && result.revision !== project.delivery?.revision
-      ? null
-      : result;
+    return result?.revision === config?.revision && config ? result : null;
   }
 
   async login(service) {
     if (!services.includes(service))
       throw new Error("지원하지 않는 서비스입니다.");
-    const command = await commandFor(service);
+    if (process.platform !== "win32")
+      throw new Error("공식 CLI에서 로그인한 뒤 연결 상태를 다시 확인하세요.");
+    if (this.running.size) throw new Error("릴리스가 끝난 뒤 보조 서비스 계정을 변경하세요.");
+    if (this.logins.has(service)) return { waiting: true };
+    const command = await this.resolveCommand(service);
     if (!command) throw new Error("공식 CLI를 설치하고 앱을 다시 열어 주세요.");
+    if (this.logins.has(service)) return { waiting: true };
+    if (this.running.size) throw new Error("릴리스가 끝난 뒤 보조 서비스 계정을 변경하세요.");
     const args =
       service === "github"
         ? [
@@ -153,11 +176,12 @@ export class AuxiliaryServices {
             "--web",
             "--git-protocol",
             "https",
+            "--skip-ssh-key",
           ]
         : ["login"];
     // Login needs a visible console for official prompts and device codes.
     const quote = (value) => `'${value.replaceAll("'", "''")}'`;
-    const script = `& ${[...command, ...args].map(quote).join(" ")}; Read-Host '로그인 창을 닫으려면 Enter'`;
+    const script = `& ${[...command, ...args].map(quote).join(" ")}; exit $LASTEXITCODE`;
     const shell = join(
       process.env.SystemRoot || "C:\\Windows",
       "System32",
@@ -166,26 +190,23 @@ export class AuxiliaryServices {
       "powershell.exe",
     );
     const encoded = Buffer.from(script, "utf16le").toString("base64");
-    const launch = `$ErrorActionPreference = 'Stop'; Start-Process -FilePath ${quote(shell)} -ArgumentList @('-NoProfile','-EncodedCommand','${encoded}') -WindowStyle Normal`;
-    try {
-      await run(
-        [shell],
-        [
-          "-NoProfile",
-          "-EncodedCommand",
-          Buffer.from(launch, "utf16le").toString("base64"),
-        ],
-      );
-    } catch {
-      throw new Error(
-        "로그인 창을 열지 못했습니다. 공식 CLI로 로그인한 뒤 다시 확인하세요.",
-      );
-    }
-    return true;
+    const launch = `$ErrorActionPreference = 'Stop'; $child = Start-Process -FilePath ${quote(shell)} -ArgumentList @('-NoProfile','-EncodedCommand','${encoded}') -WindowStyle Normal -PassThru; $child.WaitForExit(); exit $child.ExitCode`;
+    const job = Promise.resolve().then(async () => {
+      let connected = false;
+      try {
+        await this.execute([shell], ["-NoProfile", "-EncodedCommand", Buffer.from(launch, "utf16le").toString("base64")], { timeout: 600000 });
+        connected = Boolean(await this.account(service, command));
+      } catch {} finally {
+        this.logins.delete(service);
+        this.notify({ type: "service-login", service, connected });
+      }
+    });
+    this.logins.set(service, job);
+    return { waiting: true };
   }
 
   async save(id, input) {
-    if (this.running.has(id)) throw new Error("자동 릴리스가 진행 중입니다.");
+    if (this.running.has(id) || this.logins.size) throw new Error("릴리스 또는 보조 서비스 로그인이 끝난 뒤 저장하세요.");
     const grant = await this.workspace.grant(id);
     const project = this.projects.find(await this.projects.list(), id);
     const github = input.github === true;
@@ -204,10 +225,11 @@ export class AuxiliaryServices {
       throw new Error(
         "저장소 이름, Vercel 범위와 프로젝트 이름에 영문·숫자·하이픈을 사용하세요.",
       );
-    const accounts = { github: project.delivery?.accounts.github };
+    const prior = await this.configuration(id, project);
+    const accounts = { github: prior?.accounts.github };
     for (const service of ["github", "vercel"]) {
       if (!(service === "github" ? github : vercel)) continue;
-      const command = await commandFor(service);
+      const command = await this.resolveCommand(service);
       accounts[service] =
         command && (await this.account(service, command).catch(() => null));
       if (!accounts[service])
@@ -215,7 +237,12 @@ export class AuxiliaryServices {
     }
     if (accounts.github && !slug.test(accounts.github))
       throw new Error("GitHub 계정을 확인할 수 없습니다.");
-    const prior = project.delivery;
+    if (supabaseRef) {
+      const command = await this.resolveCommand("supabase");
+      const available = command ? await this.supabaseProjects(command).catch(() => []) : [];
+      if (!available.some((row) => row?.id === supabaseRef || row?.reference_id === supabaseRef))
+        throw new Error("현재 Supabase 계정에서 이 프로젝트 참조 ID를 확인할 수 없습니다.");
+    }
     const sameGitHub =
       prior?.grantId === grant.grantId &&
       prior?.name === name &&
@@ -229,6 +256,7 @@ export class AuxiliaryServices {
       prior?.production === production;
     const config = {
       revision: randomUUID(),
+      deviceBinding: await this.identity(),
       grantId: grant.grantId,
       github,
       vercel,
@@ -279,7 +307,7 @@ export class AuxiliaryServices {
       state.status !== "completed" ||
       !state.validation?.passed ||
       !revision ||
-      this.running.has(id)
+      this.running.has(id) || this.logins.size
     )
       return false;
     this.running.add(id);
@@ -298,7 +326,7 @@ export class AuxiliaryServices {
     };
     try {
       const project = this.projects.find(await this.projects.list(), id);
-      const config = project.delivery;
+      const config = await this.configuration(id, project);
       if (
         config?.revision !== revision ||
         config.grantId !== state.grantId ||
@@ -428,7 +456,7 @@ export class AuxiliaryServices {
           return true;
         stage = "vercel";
         await report("running", "Vercel 배포 중…");
-        const cli = await commandFor("vercel");
+        const cli = await this.resolveCommand("vercel");
         if (
           !cli ||
           (await this.account("vercel", cli).catch(() => null)) !==
@@ -459,6 +487,8 @@ export class AuxiliaryServices {
             });
             knownUrl = priorVercelDeployment(listing, state.id);
           }
+          if (!knownUrl && (await this.account("vercel", cli).catch(() => null)) !== config.accounts.vercel)
+            throw new Error("Vercel 배포 중 계정이 바뀌었습니다.");
           result.vercelAttempted = true;
           await report("running", "Vercel 원격 상태 확인 · 배포 처리 중…");
           const output = knownUrl ?? await run(
@@ -482,7 +512,7 @@ export class AuxiliaryServices {
           if (!url) throw new Error("이전 Vercel 요청의 성공 여부를 확인할 수 없습니다. Vercel 대시보드에서 실행 기록을 확인하세요.");
           result.vercel = { url, production: config.production };
         } catch (error) {
-          if (error.message.startsWith("이전 Vercel")) throw error;
+          if (/^(?:이전 Vercel|Vercel 배포 중)/.test(error.message)) throw error;
           throw new Error(
             "Vercel 배포에 실패했습니다. 프로젝트 범위와 Vercel 빌드 로그를 확인하세요.",
           );
@@ -520,7 +550,7 @@ export class AuxiliaryServices {
   }
 
   async pushGitHub(id, config, cwd, suggestedName, state) {
-    const gh = await commandFor("github");
+    const gh = await this.resolveCommand("github");
     const git = await findExecutable("git");
     if (
       !gh ||
@@ -532,19 +562,26 @@ export class AuxiliaryServices {
     const name =
       config.resolvedName || config.name || repositoryName(suggestedName, id);
     const repo = `${config.accounts.github}/${name}`;
+    const token = await this.execute(gh, ["auth", "token", "--hostname", "github.com", "--user", config.accounts.github])
+      .catch(() => null);
+    if (!token || !/^[A-Za-z0-9_-]+$/.test(token))
+      throw new Error("저장한 GitHub 계정의 자격증명을 확인하지 못했습니다.");
+    const githubEnv = { ...serviceEnvironment(), GH_HOST: "github.com", GH_TOKEN: token };
+    if ((await this.account("github", gh, { env: githubEnv }).catch(() => null)) !== config.accounts.github)
+      throw new Error("GitHub 자격증명의 계정이 저장한 배포 계정과 다릅니다.");
     const view = async () =>
       JSON.parse(
-        await run(gh, [
+        await this.execute(gh, [
           "repo",
           "view",
           repo,
           "--json",
           "id,isPrivate,nameWithOwner",
-        ]),
+        ], { env: githubEnv }),
       );
     try {
       if (!config.repoId) {
-        await run(gh, ["repo", "create", repo, "--private"]);
+        await this.execute(gh, ["repo", "create", repo, "--private"], { env: githubEnv });
         const created = await view();
         config.repoId = created.id;
         await this.projects.mutate((data) => {
@@ -562,12 +599,6 @@ export class AuxiliaryServices {
         current.nameWithOwner.toLowerCase() !== repo.toLowerCase()
       )
         throw new Error("Unexpected repository identity");
-      const token = await run(gh, [
-        "auth",
-        "token",
-        "--hostname",
-        "github.com",
-      ]);
       const env = nativeEnvironment();
       for (const key of Object.keys(env))
         if (/^GIT_/i.test(key)) delete env[key];

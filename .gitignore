@@ -1,6 +1,8 @@
 node_modules/
 release/
 artifacts/
+/output/
+/tmp/
 .runtime/
 .env
 .env.*
@@ -9,3 +11,19 @@ artifacts/
 *.enc
 
 .tools/
+
+.control-tower/
+.codex/
+.claude/
+.gemini/
+.cursor/
+.supabase/
+.vercel/
+.npmrc
+.git-credentials
+auth.json
+oauth_creds.json
+credentials.json
+*.pem
+*.pfx
+*.p12

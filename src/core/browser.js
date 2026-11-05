@@ -15,6 +15,7 @@ const EXTERNAL_HOSTS = new Set([
   "auth.anthropic.com",
   "geminicli.com",
   "accounts.google.com",
+  "aistudio.google.com",
   "oauth2.googleapis.com",
   "cursor.com",
   "www.cursor.com",

@@ -106,8 +106,8 @@ test("mutation uses a fresh report and separates uncovered mutants from passing 
     status, location: { start: { line: 3, column: 1 } },
     mutatorName: "EqualityOperator", replacement: "<=",
   });
-  async function execute(status) {
-    const report = { files: { "domain.js": { mutants: [mutant(status)] } } };
+  async function execute(status, replacement = "<=") {
+    const report = { files: { "domain.js": { mutants: [{ ...mutant(status), replacement }] } } };
     await writeFile(
       join(f.root, "mutation-fixture.cjs"),
       `require("node:fs").writeFileSync(process.env.TOWER_MUTATION_REPORT, ${JSON.stringify(JSON.stringify(report))});`,
@@ -121,6 +121,11 @@ test("mutation uses a fresh report and separates uncovered mutants from passing 
   assert.equal(killed.passed, true);
   assert.equal(killed.scopeHash, uncovered.scopeHash);
   assert.notEqual(killed.reportPath, uncovered.reportPath);
+  const secret = "sbp_" + "x".repeat(40);
+  const invalid = await execute(secret, secret);
+  assert.equal(invalid.counts.Unknown, 1);
+  assert.equal(invalid.passed, false);
+  assert.ok(!JSON.stringify(invalid).includes(secret));
 });
 
 test("validation masks dotenv values and split key output before events and persistence", async (t) => {

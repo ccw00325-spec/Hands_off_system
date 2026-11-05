@@ -89,6 +89,11 @@ export class AgentChat {
     }
     if (agentId === "gpt" && waitingDesign?.status === "awaiting_design" &&
         waitingDesign.options.conversationId === conversationId && /마음에\s*안|다시\s*만들|시안\s*수정/.test(message)) {
+      const feedback = /^시안\s*수정\s*[:：]\s*([\s\S]+)$/.exec(message.trim())?.[1];
+      if (feedback) {
+        await this.workflow.reviseDesign(projectId, feedback, waitingDesign.design.provider ?? "gpt", conversationId);
+        return { conversationId, message: user, state: await this.workflow.current(projectId) };
+      }
       await this.conversations.append(projectId, conversationId, agentId, "assistant",
         "UI 시안 탭의 왼쪽 입력란에 바꾸고 싶은 부분을 적고 다시 생성해 주세요. 새 시안을 승인할 때까지 구현은 기다립니다.", "complete");
       this.changed(projectId, conversationId);

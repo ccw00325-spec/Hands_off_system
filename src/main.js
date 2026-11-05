@@ -48,6 +48,11 @@ if (!app.isPackaged) app.setPath("userData", resolve(directory, "../.runtime"));
 // This switch is for local automated tests only and never changes production authentication.
 if (!app.isPackaged && process.env.TOWER_TEST_USER_DATA)
   app.setPath("userData", resolve(process.env.TOWER_TEST_USER_DATA));
+if (app.isPackaged) {
+  for (const name of ["no-sandbox", "disable-web-security", "allow-running-insecure-content", "remote-debugging-port", "remote-debugging-pipe"])
+    app.commandLine.removeSwitch(name);
+  app.enableSandbox();
+}
 const rendererPath = join(directory, "renderer/index.html");
 const rendererURL = pathToFileURL(rendererPath).href;
 let window,
@@ -95,7 +100,7 @@ function handle(channel, action) {
       !window ||
       event.sender !== window.webContents ||
       event.senderFrame !== window.webContents.mainFrame ||
-      event.senderFrame.url !== rendererURL
+      event.senderFrame?.url !== rendererURL
     )
       return { ok: false, error: "허용되지 않은 요청입니다." };
     try {
@@ -145,7 +150,8 @@ function generateDesignImage(id, prompt, provider = "gpt", signal) {
 async function executionOptions(id) {
   const current = await status();
   const settings = await preferences.get();
-  const delivery = projects.find(await projects.list(), id).delivery;
+  const project = projects.find(await projects.list(), id);
+  const delivery = await auxiliary.configuration(id, project);
   return {
     deliveryRevision: delivery?.revision,
     suggestRepositoryName:
@@ -160,7 +166,7 @@ async function executionOptions(id) {
     crossReview: true,
     designApproval: settings.designApproval,
     validationScript: settings.validationScript,
-    allowExecution: settings.allowExecution,
+    allowExecution: settings.allowExecution && project.workspace?.executionApproved === true,
     unattended: settings.unattended,
     funContract: true,
     team: await roles.getTeam(id),
@@ -374,7 +380,8 @@ else {
               ...context.options,
               allowExecution:
                 context.options.allowExecution === true &&
-                (await preferences.get()).allowExecution,
+                (await preferences.get()).allowExecution &&
+                (await workspace.grant(context.projectId, context.grantId)).executionApproved === true,
             },
           }),
       );
@@ -512,7 +519,7 @@ else {
         const state = await workflow.current(id, prior.runId);
         if (state?.status !== "completed" || !state.options.deliveryRevision)
           throw new Error("자동 릴리스가 설정된 완료 작업이 필요합니다.");
-        const config = projects.find(await projects.list(), id).delivery;
+        const config = await auxiliary.configuration(id);
         if (config?.revision !== state.options.deliveryRevision)
           throw new Error(
             "설정이 변경됐습니다. 새 작업을 완료한 뒤 배포하세요.",
@@ -522,6 +529,26 @@ else {
         return true;
       });
       handle("tower:preferences", () => preferences.get());
+      handle("tower:project-execution", (id, approval) =>
+        exclusive(`project-execution:${id}`, async () => {
+          const grant = await workspace.grant(id);
+          if (approval !== true && approval !== false) return grant.executionApproved === true;
+          if (approval) {
+            const result = await dialog.showMessageBox(window, {
+              type: "warning",
+              buttons: ["취소", "이 폴더의 코드 실행 허용"],
+              defaultId: 0, cancelId: 0, noLink: true,
+              title: "프로젝트 코드 실행 승인",
+              message: "신뢰하는 프로젝트에서만 코드 실행을 허용하세요.",
+              detail: `${grant.root}\n테스트와 npm 스크립트는 현재 OS 사용자 권한으로 실행됩니다. 프로젝트 코드가 이 사용자가 접근할 수 있는 파일을 읽거나 네트워크에 연결할 수 있습니다.`,
+            });
+            if (result.response !== 1) return grant.executionApproved === true;
+          }
+          const saved = await workspace.setExecutionApproval(id, grant.grantId, approval);
+          if (!saved && workflow.runs.get(id)?.state.status === "validating") await workflow.stopAndWait(id);
+          return saved;
+        }),
+      );
       handle("tower:save-preferences", (value) =>
         exclusive("preferences", async () => {
           const saved = await preferences.save(value);
@@ -810,15 +837,16 @@ else {
         webPreferences: {
           preload: join(directory, "preload.cjs"),
           contextIsolation: true,
+          devTools: !app.isPackaged,
           nodeIntegration: false,
           sandbox: true,
           webSecurity: true,
+          webviewTag: false,
         },
       });
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-      window.webContents.on("will-navigate", (event, url) => {
-        if (url !== rendererURL) event.preventDefault();
-      });
+      for (const navigation of ["will-navigate", "will-frame-navigate", "will-redirect"])
+        window.webContents.on(navigation, (event) => event.preventDefault());
       window.webContents.on("will-attach-webview", (event) =>
         event.preventDefault(),
       );

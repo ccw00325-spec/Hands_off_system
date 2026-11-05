@@ -12,9 +12,13 @@ import {
 import { resolve, relative, join, isAbsolute, parse, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID, createHash } from "node:crypto";
+import { homedir, tmpdir } from "node:os";
 import { deviceBinding } from "./device-binding.js";
 
+const PROFILE_DIRECTORIES = new Set([".config", ".local", ".kube", ".docker", ".gnupg", ".gcloud", ".password-store"]);
+const CREDENTIAL_DIRECTORIES = new Set([".runtime", ".codex", ".claude", ".gemini", ".cursor", ".ssh", ".aws", ".azure", ".supabase", ".vercel", ...PROFILE_DIRECTORIES]);
 const SKIP = new Set([
+  ...CREDENTIAL_DIRECTORIES,
   "node_modules",
   ".git",
   ".control-tower",
@@ -36,7 +40,7 @@ const SKIP = new Set([
   "artifacts",
 ]);
 const PRIVATE =
-  /^(\.env(?:\..*)?|vault(?:\..*)?\.enc|credentials(?:\..*)?|auth\.json|oauth_creds\.json|secrets?(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.gitmodules|id_(?:rsa|ed25519)(?:\..*)?|.*\.(?:pem|key|pfx))$/i;
+  /^(\.env(?:\..*)?|vault(?:\..*)?\.enc|credentials(?:\..*)?|auth\.json|oauth_creds\.json|secrets?(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.gitmodules|\.git-credentials|\.dockerconfigjson|hosts\.ya?ml|access-token|application_default_credentials\.json|id_(?:rsa|ed25519)(?:\..*)?|.*\.(?:pem|key|pfx|p12))$/i;
 export const digest = (value) =>
   createHash("sha256").update(value).digest("hex");
 
@@ -61,17 +65,7 @@ export function relativeFile(value, internal = false) {
         /[<>"|?*]/.test(part) ||
         /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part) ||
         PRIVATE.test(part) ||
-        [
-          ".git",
-          ".runtime",
-          ".codex",
-          ".claude",
-          ".gemini",
-          ".cursor",
-          ".ssh",
-          ".aws",
-          ".azure",
-        ].includes(part.toLowerCase()) ||
+        (part.toLowerCase() === ".git" || CREDENTIAL_DIRECTORIES.has(part.toLowerCase())) ||
         (!internal && part.toLowerCase() === ".control-tower"),
     )
   )
@@ -99,10 +93,24 @@ export class Workspace {
       this.projects.store.directory,
     ));
   }
+  assertProjectRoot(root) {
+    const home = resolve(homedir());
+    const candidates = [process.env.CODEX_HOME, process.env.CLAUDE_CONFIG_DIR,
+      process.env.GH_CONFIG_DIR, process.env.GEMINI_CLI_HOME, process.env.XDG_CONFIG_HOME]
+      .filter((path) => path && isAbsolute(path));
+    const osProfile = [process.env.APPDATA, process.env.LOCALAPPDATA]
+      .some((path) => path && isAbsolute(path) && inside(path, root));
+    if (inside(root, home) || (osProfile && (root === resolve(tmpdir()) || !inside(tmpdir(), root))) ||
+        candidates.some((path) => inside(path, root)) ||
+        root.split(/[\\/]/).some((part) => CREDENTIAL_DIRECTORIES.has(part.toLowerCase())) ||
+        inside(join(home, "Library", "Application Support"), root))
+      throw new Error("사용자 홈과 인증 데이터 폴더 대신 별도의 프로젝트 폴더를 선택하세요.");
+  }
   async prepare(projectId, folder) {
     if (projectId !== null)
       this.projects.find(await this.projects.list(), projectId);
     const root = await realpath(folder);
+    this.assertProjectRoot(root);
     const privateRoot = await this.privateRoot();
     if (privateRoot && inside(privateRoot, root))
       throw new Error(
@@ -183,7 +191,17 @@ export class Workspace {
       throw new Error(
         "작업 폴더가 교체되었습니다. 폴더를 다시 선택하고 동의하세요.",
       );
+    this.assertProjectRoot(root);
     return grant;
+  }
+  async setExecutionApproval(projectId, grantId, approved) {
+    await this.grant(projectId, grantId);
+    await this.projects.mutate((data) => {
+      const project = this.projects.find(data, projectId);
+      if (project.workspace?.grantId !== grantId) throw new Error("프로젝트 폴더가 바뀌었습니다.");
+      project.workspace.executionApproved = approved === true;
+    });
+    return approved === true;
   }
   async locate(
     projectId,

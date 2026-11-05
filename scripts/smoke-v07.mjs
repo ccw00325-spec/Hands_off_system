@@ -158,6 +158,17 @@ try {
   await page.locator("#folder-consent-check").check();
   await page.locator("#confirm-folder").click();
   await page.locator("#folder-consent").waitFor({ state: "hidden" });
+  await application.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 0 }); });
+  await page.locator("#open-settings").click();
+  await page.locator("#project-execution-status").filter({ hasText: "현재 폴더 미승인" }).waitFor();
+  await page.locator("#project-execution").click();
+  await page.locator("#project-execution").filter({ hasText: "현재 폴더 코드 실행 승인" }).waitFor();
+  await application.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 1 }); });
+  await page.locator("#project-execution").click();
+  await page.locator("#project-execution-status").filter({ hasText: "현재 폴더 승인됨" }).waitFor();
+  await page.locator("#close-settings").click();
+  checks.push("Global execution preference leaves new folders unapproved until the native approval dialog is accepted");
+  await page.locator("#folder-consent").waitFor({ state: "hidden" });
   await page.locator("#sidebar-projects .conversation-row.selected").waitFor();
   let data = (await page.evaluate(() => window.tower.projects())).value;
   const projectId = data.activeId;
@@ -167,10 +178,18 @@ try {
       const { AuxiliaryServices } = process
         .getBuiltinModule("module")
         .createRequire(path)(path);
+      let vercelConnected = false;
+      AuxiliaryServices.prototype.login = async function (service) {
+        setTimeout(() => {
+          vercelConnected = true;
+          this.notify({ type: "service-login", service, connected: true });
+        }, 100);
+        return { waiting: true };
+      };
       AuxiliaryServices.prototype.status = async () => ({
         accounts: {
           github: { installed: true, account: "fixture-user" },
-          vercel: { installed: true, account: null },
+          vercel: { installed: true, account: vercelConnected ? "fixture-vercel" : null },
           supabase: { installed: false, account: null },
         },
         config: null,
@@ -192,6 +211,10 @@ try {
     await page.locator('[data-service-login="supabase"]').isDisabled(),
     true,
   );
+  await page.locator('[data-service-login="vercel"]').click();
+  await page.locator("#service-vercel").filter({ hasText: "fixture-vercel" }).waitFor();
+  await page.locator("#services-result").filter({ hasText: "계정 연결을 확인했습니다" }).waitFor();
+  checks.push("Auxiliary sign-in result automatically refreshes the verified CLI account in the Electron UI");
   await page.locator("#close-services").click();
   await application.evaluate(({ BrowserWindow }, projectId) => {
     BrowserWindow.getAllWindows()[0].webContents.send("tower:event", {
@@ -263,7 +286,23 @@ try {
         require = process.getBuiltinModule("module").createRequire(p);
       const { GPTProvider } = require(p);
       const { ImageService } = require(p.replace("providers.js", "images.js"));
-      ImageService.prototype.generate = async () => {
+      const { Store } = require(p.replace("providers.js", "store.js"));
+      const { GeminiConnection } = require(p.replace("providers.js", "gemini.js"));
+      let geminiConnected = false;
+      GeminiConnection.prototype.status = async () => ({
+        installed: true, connected: geminiConnected, login: { waiting: false },
+      });
+      GeminiConnection.prototype.connect = async () => {
+        geminiConnected = true;
+        return { reused: true, message: "Fixture Google connection" };
+      };
+      const readSecrets = Store.prototype.secrets;
+      Store.prototype.secrets = async function () {
+        return { ...await readSecrets.call(this), imageKey: "fixture", geminiImageKey: "fixture" };
+      };
+      globalThis.designPrompts = [];
+      ImageService.prototype.generate = async (prompt, provider) => {
+        globalThis.designPrompts.push({ prompt, provider });
         const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/iXsAAAAASUVORK5CYII=";
         return { buffer: Buffer.from(data, "base64"), dataUrl: "data:image/png;base64," + data };
       };
@@ -482,6 +521,10 @@ try {
     "/model selects the provider catalog model without starting a workflow",
   );
   await page.locator("#planner-input").fill("Fixture timer with QA");
+  await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { "test:mutation": "node fixture-mutation.cjs" } }));
+  await writeFile(join(root, "fixture-mutation.cjs"), `require("node:fs").writeFileSync(process.env.TOWER_MUTATION_REPORT,
+    JSON.stringify({ files: { "counter.cjs": { mutants: [{ status: "Killed" }] } } }));`);
+  await page.locator("#mutation-option").check();
   await page.evaluate(() => {
     const courier = document.querySelector("#courier");
     const animate = courier.animate.bind(courier);
@@ -496,19 +539,40 @@ try {
   });
   await page.locator("#start-workflow").click();
   await page.locator("#design-approval-status").filter({ hasText: "이대로 적용" }).waitFor();
+  await page.locator("#design-delivery").filter({ hasText: "UI를 확인해보세요!" }).waitFor();
+  await page.waitForFunction(() => window.__deliveries.some((entry) => entry.from === "gpt" && entry.to === "design"));
+  await page.screenshot({ path: join(artifacts, "design-delivery.png") });
   assert.equal((await page.evaluate((id) => window.tower.workflow(id), projectId)).value.tasks.every((task) => task.status === "pending"), true);
   await page.locator("#open-run-design").click();
   await page.locator("#generated-image").waitFor();
   const draft = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
-  const revised = await page.evaluate(({ projectId, conversationId }) =>
-    window.tower.generateImage(projectId, "시간 숫자를 더 크게", "gemini", conversationId),
-    { projectId, conversationId: draft.options.conversationId },
-  );
-  assert.notEqual(revised.value.artifactId, draft.design.artifactId);
+  await page.locator("#back-to-controller").click();
+  await page.locator("#sidebar-images").click();
+  assert.equal(await page.locator("#sidebar-images").getAttribute("aria-pressed"), "true");
+  await page.locator("#image-provider").selectOption("gemini");
+  await page.locator("#connections[open]").waitFor();
+  await page.locator("#gemini-auth-status").filter({ hasText: "Google 연결됨" }).waitFor();
+  await page.locator("#finish-connections").click();
+  await page.locator("#image-prompt").fill("시간 숫자를 더 크게");
+  await page.locator("#generate-image").click();
+  await page.waitForFunction(() => document.querySelector("#image-prompt").value === "");
   const waiting = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
+  assert.notEqual(waiting.design.artifactId, draft.design.artifactId);
   assert.equal(waiting.design.provider, "gemini");
   assert.ok(waiting.tasks.every((task) => task.status === "pending"));
-  await page.locator("#tab-workspace").click();
+  await page.locator("#back-to-controller").click();
+  await page.locator("#planner-input").fill("시안 수정: 검은 배경을 밝게 변경");
+  await page.locator("#start-workflow").click();
+  await page.locator("#images-view").waitFor();
+  const revised = (await page.evaluate((id) => window.tower.workflow(id), projectId)).value;
+  assert.equal(revised.design.status, "ready");
+  assert.notEqual(revised.design.artifactId, waiting.design.artifactId);
+  const prompts = await application.evaluate(() => globalThis.designPrompts);
+  assert.match(prompts[0].prompt, /Default visual direction/);
+  assert.deepEqual(prompts.slice(1).map((row) => row.provider), ["gemini", "gemini"]);
+  for (const row of prompts.slice(1)) assert.doesNotMatch(row.prompt, /Default visual direction/);
+  assert.match(prompts[2].prompt, /검은 배경을 밝게 변경/);
+  await page.locator("#back-to-controller").click();
   await page.locator("#planner-input").fill("이대로 적용");
   await page.locator("#start-workflow").click();
   checks.push("Automatic design generation pauses all workers until approval in the controller chat");
@@ -520,6 +584,9 @@ try {
     .value;
   assert.equal(run.round, 1);
   assert.equal(run.validation.passed, true);
+  assert.equal(run.mutation.counts.Killed, 1);
+  assert.match(await page.locator("#mutation-summary").innerText(), /1개 탐지/);
+  checks.push("Standalone mutation option runs only after green baseline and renders its result in the inspector");
   await page.locator("#work-usage-summary").filter({ hasText: "호출" }).waitFor();
   await page.locator("#open-checkpoints").click();
   await page.locator("#checkpoints-dialog").waitFor();
