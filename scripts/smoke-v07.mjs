@@ -693,6 +693,10 @@ try {
   checks.push(
     "QA writes real Node tests, streams TAP, detects a fixture defect, repairs the original owner and reruns the original tests",
   );
+  // Couriers intentionally pause behind Workflow/agent dialogs. Fast macOS
+  // runners can finish the fixture before the first queued delivery is shown.
+  await closeWorkflow(page);
+  await page.waitForFunction(() => window.__deliveries.some(event => event.from === 'gpt' && event.to === 'grok'), null, {timeout:15000});
   assert.ok(
     (await page.evaluate(() => window.__deliveries)).some(
       (event) => event.from === "gpt" && event.to === "grok",
