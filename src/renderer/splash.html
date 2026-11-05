@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';script-src 'self';style-src 'self';img-src 'self';connect-src 'none';object-src 'none';base-uri 'none';form-action 'none'"
+    />
+    <title>Hands off 시작 준비</title>
+    <link rel="stylesheet" href="splash.css" />
+    <script type="module" src="splash.js"></script>
+  </head>
+  <body>
+    <button id="cancel" aria-label="시작 취소" disabled>×</button>
+    <header><span>HANDS OFF</span><small>작업대 준비 중</small></header>
+    <div class="scene" aria-hidden="true">
+      <svg viewBox="0 0 480 174" role="img">
+        <path class="ground" d="M16 143H464" />
+        <ellipse class="stone-shadow" cx="245" cy="143" rx="17" ry="3" />
+        <path class="stone" d="M231 141L235 129L246 124L258 131L260 141Z" />
+        <g class="walker">
+          <g class="character">
+            <path
+              class="body"
+              d="M-18-79H12V-72H23V-64H31V-21H23V-13H-24V-20H-31V-63H-24V-72H-18Z"
+            />
+            <rect class="eye" x="-2" y="-54" width="7" height="8" rx="1" />
+            <rect class="eye" x="15" y="-54" width="7" height="8" rx="1" />
+            <path class="leg leg-a" d="M-20-18H-6V-5H1V3H-21L-27-4Z" />
+            <path class="leg leg-b" d="M7-18H20L24-3H31V5H11L3-5Z" />
+            <path class="arm" d="M20-34H35V-22H20Z" />
+          </g>
+        </g>
+        <g class="parcel">
+          <path class="box-side" d="M-20-17L-5-24L24-14L8-6Z" />
+          <path class="box-front" d="M-20-17L8-6V20L-20 10Z" />
+          <path class="box-right" d="M8-6L24-14V12L8 20Z" />
+          <path class="tape" d="M-8-21L0-24L14-17L7-13V0L0-3V-11Z" />
+        </g>
+        <g class="surprise">
+          <path d="M223 33L220 24M231 30L233 20M238 35L246 30" />
+        </g>
+      </svg>
+    </div>
+    <main>
+      <h1 id="message">상자 챙기고 출근하는 중…</h1>
+      <p id="detail">AI들이 모이면 작업대를 열어드릴게요.</p>
+      <progress
+        id="progress"
+        max="100"
+        value="0"
+        aria-label="시작 준비 단계"
+      ></progress>
+      <footer>
+        <span id="stage">앱 시작 준비</span><span id="percent">0%</span>
+      </footer>
+    </main>
+    <p class="note">표시한 진행률은 준비 단계 기준입니다.</p>
+  </body>
+</html>

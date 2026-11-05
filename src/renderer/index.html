@@ -17,19 +17,6 @@
     <link rel="stylesheet" href="role-settings.css" />
   </head>
   <body data-mission-mode="focus" data-mission-panel="gpt" data-agent-desk="true">
-    <dialog id="startup-dialog" aria-labelledby="startup-title">
-      <div class="startup-stage" aria-hidden="true">
-        <img src="assets/mascot.png" alt="" width="96" height="96" />
-      </div>
-      <h2 id="startup-title">CW_Handsoff_sys</h2>
-      <progress
-        id="startup-progress"
-        max="3"
-        value="0"
-        aria-label="시작 준비 단계"
-      ></progress>
-      <p id="startup-status" role="status">상자를 들고 출근하는 중…</p>
-    </dialog>
     <header class="topbar">
       <a class="brand" href="#workspace" aria-label="CW_Handsoff_sys 작업 공간"
         ><img
@@ -266,7 +253,7 @@
                   <select id="gpt-model" aria-label="GPT 실행 모델">
                     <option value="">GPT 모델 선택</option></select
                   ><button id="model-button" class="model-button">
-                    목록 불러오기 ▾
+                    모델 선택 ▾
                   </button>
                 </div>
                 <div class="run-actions controller-send-actions">
@@ -899,10 +886,9 @@
             <div class="action-row">
               <select id="grok-model">
                 <option value="">Grok 모델 선택</option></select
-              ><button id="load-grok-models" class="text-button">
-                모델 목록 불러오기 ↻
-              </button>
+              >
             </div>
+            <p class="hint" id="grok-catalog-state" role="status"></p>
             <p class="hint">
               Cursor가 제공하는 실제 목록에서 선택합니다. 실행 중인 작업은
               시작할 때 선택한 모델을 유지합니다.
@@ -1009,10 +995,9 @@
             <div class="action-row">
               <select id="gemini-model">
                 <option value="">Gemini 모델 선택</option></select
-              ><button id="load-gemini-models" class="text-button">
-                모델 목록 불러오기 ↻
-              </button>
+              >
             </div>
+            <p class="hint" id="gemini-catalog-state" role="status"></p>
             <p class="hint">
               현재 계정의 ACP 모델 목록을 사용합니다. 로그인이나 모델 조회만으로
               추론 권한을 보장하지 않습니다.

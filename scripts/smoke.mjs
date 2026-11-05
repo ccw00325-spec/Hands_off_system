@@ -1,3 +1,4 @@
+import {workspaceWindow} from "./electron-workspace.mjs";
 import { _electron as electron } from "@playwright/test";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
@@ -17,7 +18,7 @@ async function boot() {
     cwd: resolve("."),
     env: environment,
   });
-  const page = await application.firstWindow();
+  const page = await workspaceWindow(application);
   page.setDefaultTimeout(20000);
   await page
     .locator("#session-status[data-restoring=false]")
@@ -275,7 +276,7 @@ try {
     pathToFileURL(resolve("src/core/cursor-provider.js")).href,
   );
   await page.locator("#open-connections").click();
-  await page.locator("#load-grok-models").click();
+  await page.evaluate(()=>window.tower.refreshModelCatalog());
   await page
     .locator('#grok-model option[value="grok-fixture[effort=high]"]')
     .waitFor({ state: "attached" });

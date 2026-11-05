@@ -244,6 +244,16 @@ export function readTeamEditor() {
     throw new Error('모델 목록을 불러오는 중입니다. 조회가 끝난 뒤 저장해 주세요.');
   return validateTeam(draft(), { exclusive: true });
 }
+export function refreshEditorModels(catalog){
+ for(const field of document.querySelectorAll('#team-editor fieldset[data-agent]')){
+  for(const [providerSelector,modelSelector]of [['select[id^=role-]','.panel-model'],['.fallback-provider','.fallback-model']]){
+    const provider=field.querySelector(providerSelector)?.value,select=field.querySelector(modelSelector),entry=catalog[provider];
+    if(!provider||!entry)continue;const selected=select.value;
+    options(select,provider,entry.rows??[],selected);select.disabled=entry.state==='loading'||entry.state==='pending';
+    if(modelSelector==='.panel-model')field.querySelector('.model-status').textContent=entry.message;
+  }
+ }
+}
 export function resizeEditor(count, catalog) {
   const team = draft();
   for (const row of team) if (!row.roles.length) row.roles = ["review"];

@@ -15,12 +15,19 @@ try {
   $portableTemp = Join-Path $profile 'portable-temp'
   $null = New-Item -ItemType Directory -Path $portableTemp
   $process = Start-Process -Environment @{ TEMP=$portableTemp; TMP=$portableTemp } -FilePath $executable -ArgumentList ('--user-data-dir="' + $profile + '"') -WorkingDirectory $workspace -WindowStyle Hidden -PassThru
-  $deadline = [DateTime]::UtcNow.AddSeconds(90)
-  while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath (Join-Path $profile 'projects.json'))) {
+  $deadline = [DateTime]::UtcNow.AddSeconds(180)
+  while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath (Join-Path $profile 'startup-ready.json'))) {
     if ($process.HasExited) { throw 'Packaged app exited before renderer IPC initialization.' }
     Start-Sleep -Milliseconds 500
   }
-  $report.rendererIPCInitialized = Test-Path -LiteralPath (Join-Path $profile 'projects.json')
+  $report.rendererIPCInitialized = Test-Path -LiteralPath (Join-Path $profile 'startup-ready.json')
+  if ($report.rendererIPCInitialized) {
+    $ready = Get-Content -Raw -LiteralPath (Join-Path $profile 'startup-ready.json') | ConvertFrom-Json
+    $report.mainVisible = $ready.mainVisible
+    $report.splashClosed = $ready.splashClosed
+    $report.startupPercent = $ready.percent
+    $report.rendererIPCInitialized = $ready.mainVisible -and $ready.splashClosed -and $ready.percent -eq 100
+  }
   $report.credentialVaultCopied = Test-Path -LiteralPath (Join-Path $profile 'vault.enc')
   if ($Portable) {
     $expected = (Get-FileHash -LiteralPath (Join-Path $output 'win-unpacked/resources/app.asar')).Hash

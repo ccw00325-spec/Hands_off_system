@@ -7,6 +7,12 @@ contextBridge.exposeInMainWorld(
   "tower",
   Object.freeze({
     status: call("status"),
+    startup: call('startup'),
+    startupState: call('startup-state'),
+    startupReady: call('startup-ready'),
+    startupFailed: call('startup-failed'),
+    modelCatalog: call('model-catalog'),
+    refreshModelCatalog: call('refresh-model-catalog'),
     notifications: call("notifications"),
     addNotification: call("add-notification"),
     removeNotification: call("remove-notification"),

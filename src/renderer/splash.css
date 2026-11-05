@@ -1,0 +1,277 @@
+/* Hallmark component: native startup splash. P5 H5 E4 S5 R5 V4. */
+:root {
+  --paper: #fff;
+  --ink: #202726;
+  --muted: #65716d;
+  --line: #e6ebe8;
+  --mint: #9ce4c7;
+  --track: #edf1ef;
+  --stone: #98a39e;
+  --stone-shadow: #e4e9e6;
+  --box-front: #eee0c0;
+  --box-side: #f8eccf;
+  --box-right: #d6c49d;
+  --font: "Segoe UI", "Malgun Gothic", sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.6 var(--font);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  height: 100vh;
+  user-select: none;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  padding: 22px 28px 0;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+}
+header small {
+  color: var(--muted);
+  font-size: 10px;
+  margin-right: 18px;
+}
+#cancel {
+  position: absolute;
+  right: 9px;
+  top: 5px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 23px;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+}
+#cancel:focus-visible {
+  outline: 2px solid var(--ink);
+}
+#cancel:hover {
+  color: var(--ink);
+}
+.scene {
+  overflow: hidden;
+  height: 164px;
+  margin-top: 10px;
+}
+.scene svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ground {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.stone {
+  fill: var(--stone);
+}
+.stone-shadow {
+  fill: var(--stone-shadow);
+}
+.body,
+.leg,
+.arm {
+  fill: var(--mint);
+}
+.eye,
+.tape {
+  fill: var(--ink);
+}
+.box-front {
+  fill: var(--box-front);
+}
+.box-side {
+  fill: var(--box-side);
+}
+.box-right {
+  fill: var(--box-right);
+}
+.walker {
+  animation: walk 6s linear infinite;
+}
+.character {
+  animation: trip 6s linear infinite;
+}
+.leg-a {
+  animation: step 0.32s ease-in-out infinite alternate;
+  transform-origin: -12px -12px;
+}
+.leg-b {
+  animation: step 0.32s ease-in-out infinite alternate-reverse;
+  transform-origin: 12px -12px;
+}
+.parcel {
+  animation: parcel 6s linear infinite;
+}
+.surprise {
+  stroke: var(--ink);
+  stroke-width: 2;
+  fill: none;
+  animation: surprise 6s linear infinite;
+}
+main {
+  padding: 0 30px;
+}
+h1 {
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.5;
+  margin: 4px 0 5px;
+}
+#detail {
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 20px;
+  margin: 0 0 19px;
+}
+progress {
+  appearance: none;
+  width: 100%;
+  height: 7px;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--track);
+}
+progress::-webkit-progress-bar {
+  background: var(--track);
+}
+progress::-webkit-progress-value {
+  background: var(--ink);
+  transition: width 0.2s ease;
+}
+footer {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 5px;
+}
+.note {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  margin: 17px 0 0;
+}
+@keyframes walk {
+  0% {
+    transform: translate(-65px, 138px);
+  }
+  34% {
+    transform: translate(215px, 138px);
+  }
+  43%,
+  55% {
+    transform: translate(224px, 138px);
+  }
+  65% {
+    transform: translate(250px, 138px);
+  }
+  72% {
+    transform: translate(264px, 138px);
+  }
+  100% {
+    transform: translate(555px, 138px);
+  }
+}
+@keyframes trip {
+  0%,
+  33% {
+    transform: rotate(0deg);
+  }
+  39% {
+    transform: translateY(-7px) rotate(22deg);
+  }
+  45%,
+  53% {
+    transform: translateY(-28px) rotate(79deg);
+  }
+  60% {
+    transform: rotate(20deg);
+  }
+  66% {
+    transform: rotate(-18deg);
+  }
+  73%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes parcel {
+  0% {
+    transform: translate(-34px, 108px) rotate(0deg);
+  }
+  34% {
+    transform: translate(246px, 108px) rotate(0deg);
+  }
+  43% {
+    transform: translate(284px, 88px) rotate(30deg);
+  }
+  50% {
+    transform: translate(292px, 123px) rotate(65deg);
+  }
+  56%,
+  61% {
+    transform: translate(292px, 123px) rotate(65deg);
+  }
+  67% {
+    transform: translate(294px, 117px) rotate(25deg);
+  }
+  73% {
+    transform: translate(304px, 108px) rotate(0deg);
+  }
+  100% {
+    transform: translate(595px, 108px) rotate(0deg);
+  }
+}
+@keyframes step {
+  from {
+    transform: rotate(-10deg);
+  }
+  to {
+    transform: rotate(13deg);
+  }
+}
+@keyframes surprise {
+  0%,
+  34%,
+  54%,
+  100% {
+    opacity: 0;
+  }
+  38%,
+  49% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .walker {
+    animation: none;
+    transform: translate(226px, 138px);
+  }
+  .character,
+  .leg,
+  .parcel,
+  .surprise {
+    animation: none;
+  }
+  .parcel {
+    transform: translate(256px, 108px);
+  }
+  .surprise {
+    opacity: 0;
+  }
+  progress::-webkit-progress-value {
+    transition: none;
+  }
+}

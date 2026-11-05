@@ -4,6 +4,7 @@ import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 import { checkDesktopFallback } from "./desktop-fallback.mjs";
+import {workspaceWindow} from './electron-workspace.mjs';
 const artifacts = resolve("artifacts");
 const releaseVersion = JSON.parse(
   await readFile("package.json", "utf8"),
@@ -23,10 +24,14 @@ async function boot() {
   await application.evaluate((_electron,url)=>{
     const p=process.getBuiltinModule('url').fileURLToPath(url),require=process.getBuiltinModule('module').createRequire(p);
     require(p).CodexConnection.prototype.models=async()=>[{id:'fixture-native-model',name:'Fixture model'}];
+    require(p).CodexConnection.prototype.status=async()=>({installed:true,connected:true,state:'connected',login:{waiting:false}});
     require(p.replace('codex.js','cursor.js')).CursorConnection.prototype.models=async()=>[{id:'fixture-grok',name:'Cursor fixture model'}];
+    require(p.replace('codex.js','cursor.js')).CursorConnection.prototype.status=async()=>({installed:true,connected:true,login:{waiting:false}});
     require(p.replace('codex.js','gemini.js')).GeminiConnection.prototype.models=async()=>[{id:'fixture-gemini',name:'Gemini fixture model'}];
+    require(p.replace('codex.js','gemini.js')).GeminiConnection.prototype.status=async()=>({installed:true,connected:true,login:{waiting:false}});
+    require(p.replace('codex.js','claude.js')).ClaudeConnection.prototype.status=async()=>({installed:true,connected:true,login:{waiting:false}});
   },pathToFileURL(resolve('src/core/codex.js')).href);
-  const page = await application.firstWindow();
+  const page = await workspaceWindow(application);
   debugPage = page;
   const storage=await application.evaluate(({app})=>({userData:app.getPath("userData"),sessionData:app.getPath("sessionData")}));
   assert.equal(storage.userData,profile);assert.equal(storage.sessionData,profile);
@@ -35,6 +40,7 @@ async function boot() {
   await page
     .locator("#session-status[data-restoring=false]")
     .waitFor({ state: "attached", timeout: 90000 });
+  await page.waitForFunction(()=>window.tower.startupState().then(result=>result.value.percent===100));
   return page;
 }
 async function closeAgent(page) {
@@ -85,16 +91,7 @@ try {
   await page.locator("#terminal-font-size").selectOption("14");
   await page.locator("#save-settings").click();
   await page.locator("#settings-dialog").waitFor({ state: "hidden" });
-  assert.equal(
-    await page.locator("#startup-dialog").evaluate((dialog) => dialog.open),
-    false,
-  );
-  assert.equal(
-    await page
-      .locator("#startup-progress")
-      .evaluate((progress) => progress.value),
-    3,
-  );
+  assert.equal((await page.evaluate(()=>window.tower.startupState())).value.percent,100);
   const originalViewport = await page.evaluate(() => ({width: innerWidth, height: innerHeight}));
   await page.setViewportSize({ width: 1100, height: 560 });
   await page.locator("#open-roles").click();

@@ -9,7 +9,7 @@ const output = resolve(process.argv[2] ?? "release");
 const archive = join(output, "win-unpacked", "resources", "app.asar");
 const entries = asar.listPackage(archive);
 const allowed = /^(?:|package\.json|src|src\/(?:core|renderer|renderer\/assets|skills)|src\/[^/]+\.(?:js|cjs)|src\/core\/[^/]+\.js|src\/renderer\/[^/]+\.(?:js|css)|src\/renderer\/index\.html|src\/renderer\/assets\/mascot\.png|src\/skills\/(?:fun\.md|gemini-readonly\.toml)|node_modules|node_modules\/jose(?:\/.*)?)$/;
-const assetAllowed = /^src\/renderer\/assets\/(?:provider-(?:gpt|claude|gemini|grok)\.svg|providers-NOTICE\.txt|guide(?:\/(?:workspace|roles|output|design|test-report|workflow|services|settings)\.png)?)$/;
+const assetAllowed = /^(?:src\/renderer\/splash\.html|src\/renderer\/assets\/(?:provider-(?:gpt|claude|gemini|grok)\.svg|providers-NOTICE\.txt|guide(?:\/(?:workspace|roles|output|design|test-report|workflow|services|settings)\.png)?))$/;
 const unwanted = entries.filter((entry) => {
   const path = entry.replaceAll("\\", "/").replace(/^\//, "");
   const linked = Boolean(path && asar.statFile(archive, path.split("/").join(sep), false).link);

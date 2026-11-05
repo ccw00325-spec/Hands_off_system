@@ -16,6 +16,7 @@ import {
   renderTeamEditor,
   readTeamEditor,
   resizeEditor,
+  refreshEditorModels,
   renderPanelTeam,
   renderInspector,
   renderSidebarProjects,
@@ -23,6 +24,18 @@ import {
 } from "./workbench.js";
 const $ = (selector) => document.querySelector(selector);
 let desk, notifications;
+let preparedCatalog={};
+function applyModelCatalog(value){
+  preparedCatalog=value??{};
+  for(const [provider,selector,label]of [['gpt','#gpt-model','GPT 모델 선택'],['grok','#grok-model','Cursor 모델 선택'],['gemini','#gemini-model','Gemini 모델 선택']]){
+    const select=$(selector),entry=preparedCatalog[provider],selected=select.value||connection?.[provider]?.modelId||'';
+    select.replaceChildren(new Option(label,''),...(entry?.rows??[]).map(row=>new Option(row.name,row.id)));
+    if((entry?.rows??[]).some(row=>row.id===selected))select.value=selected;
+    const hint=$('#'+provider+'-catalog-state');if(hint)hint.textContent=entry?.message??'연결 후 모델을 자동으로 준비합니다.';
+  }
+  if($('#roles-dialog').open)refreshEditorModels(preparedCatalog);
+  updateReadiness();
+}
 const mascot = createMascot($("#mascot-stage"));
 const mission = createMission({ onAction: missionAction, onMode: () => renderAssignedRoles(), onSelect: (actor,taskId) => desk?.openAgent(actor,taskId) });
 const api = window.tower;
@@ -215,10 +228,10 @@ function renderImage() {
     : "시안을 검토하고 승인하면 구현을 시작합니다.";
   $("#image-prompt").required = !design;
 }
-async function refreshStatus() {
-  const status = await call(api.status());
+async function refreshStatus(prepared) {
+  const status = prepared??await call(api.status());
+  const previous=connection;
   connection = status;
-  panelCatalogCache.clear();
   $("#app-version").textContent = `LOCAL / ${status.appVersion}`;
   const account = status.accounts.find((item) => item.active);
   const usable = account?.planEnabled === true;
@@ -363,12 +376,14 @@ async function refreshStatus() {
     $("#grok-model").append(new Option(model, model));
   $("#grok-model").value = model ?? "";
   $("#grok-model-label").textContent = model ?? "Grok 모델 미선택";
-  $("#load-grok-models").disabled = !status.grok.connected;
   for (const provider of ["claude", "grok"])
     renderCliLogin(provider, status[provider]);
   renderGeminiConnection(status.gemini);
   renderAssignedRoles();
   renderCodexConnection(status);
+  if(!prepared)applyModelCatalog(await call(api.modelCatalog()));
+  if(!prepared&&previous&&['gpt','claude','grok','gemini'].some(id=>previous[id]?.connected!==status[id]?.connected)&&!Object.values(preparedCatalog).some(entry=>entry.state==='loading'))
+    void call(api.refreshModelCatalog()).then(applyModelCatalog).catch(()=>{});
   if (usageData) renderUsage(usageData);
   updateReadiness();
   return status;
@@ -448,6 +463,7 @@ $("#refresh-status").addEventListener("click", () =>
   busy($("#refresh-status"), "확인 중…", async () => {
     await restoreSavedConnections();
     await refreshStatus();
+    applyModelCatalog(await call(api.refreshModelCatalog()));
     toast("공식 CLI와 저장된 연결 상태를 확인했습니다.");
   }),
 );
@@ -629,7 +645,7 @@ $("#model-button").addEventListener("click", () =>
     }
     $("#model-list").replaceChildren();
     $("#models-dialog").showModal();
-    const rows = await call(api.models());
+    const rows = preparedCatalog.gpt?.rows??[];
     const selected = $("#gpt-model").value;
     $("#gpt-model").replaceChildren(
       new Option("GPT 모델 선택", ""),
@@ -656,7 +672,7 @@ $("#model-button").addEventListener("click", () =>
       });
     }
     if (!rows.length)
-      $("#model-list").textContent = "이 계정에서 표시할 모델이 없습니다.";
+      $("#model-list").textContent = preparedCatalog.gpt?.message??"이 계정에서 표시할 모델이 없습니다. 계정 연결을 확인하세요.";
   }),
 );
 $("#close-models").addEventListener("click", () => $("#models-dialog").close());
@@ -670,6 +686,7 @@ async function initialize() {
     );
   } else {
     api.onEvent(async (event) => {
+      if(event.type==='model-catalog'){applyModelCatalog(event.catalog);return;}
       if (event.type === "service-login") {
         if ($("#services-dialog").open)
           void loadServices().then(() => {
@@ -811,34 +828,14 @@ async function initialize() {
       }
     });
     try {
-      const startup = $("#startup-dialog");
-      const progress = $("#startup-progress");
-      const statusLine = $("#startup-status");
-      startup.showModal();
-      const arrival = Promise.allSettled(
-        startup
-          .querySelector("img")
-          .getAnimations()
-          .map((animation) => animation.finished),
-      );
-      try {
-        renderProjects(await call(api.projects()));
-        progress.value = 1;
-        statusLine.textContent =
-          "프로젝트 선반을 정리했어요. 설정을 확인하는 중…";
-        preferences = await call(api.preferences());
-        fillPreferences(preferences);
-        progress.value = 2;
-        statusLine.textContent = "상자를 내려놓고 작업대를 여는 중…";
-        await arrival;
-        progress.value = 3;
-      } finally {
-        startup.close();
-      }
+      const boot=await call(api.startup());
+      renderProjects(boot.projects);
+      preferences=boot.preferences;fillPreferences(preferences);
+      const restored=await restoreSavedConnections(boot.restored);
+      const status=await refreshStatus(boot.status);
+      applyModelCatalog(boot.catalog);
       if (!localStorage.getItem("tower-tour-v1")) startTour();
       else if (!preferences.onboardingComplete) $("#settings-dialog").showModal();
-      const restored = await restoreSavedConnections();
-      const status = await refreshStatus();
       $("#footer-status").textContent =
         "연결 상태 확인 완료 · 프로젝트 폴더에서 작업합니다.";
       const connected =
@@ -856,8 +853,13 @@ async function initialize() {
         openConnections();
       renderUsage(await call(api.usage()));
       void refreshUsage(false);
+      await refreshWorkspace();
+      await loadConversation();
+      await document.fonts.ready;
+      await call(api.startupReady());
     } catch (error) {
       toast(error.message, "error");
+      void api.startupFailed(error.message);
     }
   }
 }
@@ -1236,13 +1238,13 @@ async function connectCLI(provider, force = false) {
   });
   if (connection?.[provider]) renderCliLogin(provider, connection[provider]);
 }
-async function restoreSavedConnections() {
+async function restoreSavedConnections(prepared) {
   if (restoring) return null;
   restoring = true;
   $("#session-status").dataset.restoring = "true";
   $("#session-status").textContent = "저장된 연결 확인 중…";
   try {
-    const result = await call(api.restoreConnections());
+    const result = prepared??await call(api.restoreConnections());
     const count =
       Number(result.gpt.connected) +
       Number(result.claude.connected) +
@@ -1308,19 +1310,6 @@ $("#login-browser").addEventListener("change", async (event) => {
     $("#login-browser").value = (await call(api.browserSettings())).preferred;
   }
 });
-$("#load-grok-models").addEventListener("click", () =>
-  busy($("#load-grok-models"), "조회 중…", async () => {
-    const rows = await call(api.grokModels());
-    const selected = connection?.grok.modelId;
-    $("#grok-model").replaceChildren(
-      new Option("Grok 모델 선택", ""),
-      ...rows.map((row) => new Option(row.name, row.id)),
-    );
-    if (rows.some((row) => row.id === selected))
-      $("#grok-model").value = selected;
-    if (!rows.length) toast("이 Cursor 계정에서 Grok 모델을 찾지 못했습니다.");
-  }),
-);
 $("#grok-model").addEventListener("change", async (event) => {
   if (!event.target.value) return;
   try {
@@ -1514,7 +1503,7 @@ function renderAssignedRoles() {
   const controller=selected[0];
   if (controller) {
     $("#gpt-model").hidden=controller.provider!=="gpt"||!!controller.modelId;
-    $("#model-button").textContent=controller.modelId|| (controller.provider!=="gpt"?AI_NAMES[controller.provider]+" 모델 설정":"목록 불러오기 ▾");
+    $("#model-button").textContent=controller.modelId|| (controller.provider!=="gpt"?AI_NAMES[controller.provider]+" 모델 선택":"모델 선택 ▾");
   }
   $("#role-summary").textContent = (teamConfig ?? selected)
     .map(
@@ -1631,7 +1620,7 @@ let openingRoles=false;
 async function openRoles(role = "gpt") {
   if (!projectData||openingRoles) return;
   openingRoles=true;
-  const trigger=$("#open-roles"),label=trigger.textContent;trigger.disabled=true;trigger.textContent="모델 확인 중…";
+  const trigger=$("#open-roles"),label=trigger.textContent;trigger.disabled=true;trigger.textContent="설정 여는 중…";
   const id = projectData.activeId;
   try {
     const selected = await call(api.team(id));
@@ -1645,25 +1634,7 @@ async function openRoles(role = "gpt") {
     toast(error.message, "error");
   } finally {openingRoles=false;trigger.disabled=false;trigger.textContent=label;}
 }
-const panelCatalogCache = new Map();
-async function fetchPanelModelCatalog(provider) {
-  if (provider === "gpt") return call(api.models());
-  if (provider === "grok") return (await call(api.grokModels())).map(row=>({...row,current:row.id===connection?.grok.modelId}));
-  if (provider === "gemini") return (await call(api.geminiModels())).map(row=>({...row,current:row.id===connection?.gemini.modelId}));
-  return ["sonnet", "opus", "haiku"].map((id) => ({
-    id,
-    name: `${id} · Claude CLI 공식 별칭`,
-  }));
-}
-function panelModelCatalog(provider) {
-  const cached=panelCatalogCache.get(provider);
-  if(cached&&Date.now()-cached.at<60000)return cached.promise;
-  let timeout;
-  const promise=Promise.race([fetchPanelModelCatalog(provider),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('조회 시간이 초과되었습니다. 계정 연결을 확인한 뒤 설정을 다시 열어 주세요.')),15000);})]).finally(()=>clearTimeout(timeout));
-  panelCatalogCache.set(provider,{at:Date.now(),promise});
-  promise.catch(()=>{if(panelCatalogCache.get(provider)?.promise===promise)panelCatalogCache.delete(provider);});
-  return promise;
-}
+function panelModelCatalog(provider) { const rows=preparedCatalog[provider]?.rows??[];return Promise.resolve(rows.map(row=>({...row,current:row.id===connection?.[provider]?.modelId}))); }
 $("#open-roles").addEventListener("click", () => openRoles());
 document
   .querySelectorAll(".change-role")
@@ -1733,7 +1704,6 @@ function renderGeminiConnection(status = {}) {
   $("#gemini-install").hidden = !!status.installed;
   $("#gemini-login-flow").hidden = !login.waiting;
   $("#gemini-login-browser").hidden = !login.hasBrowserLink;
-  $("#load-gemini-models").disabled = !status.connected;
   if (
     status.modelId &&
     !Array.from($("#gemini-model").options).some(
@@ -1778,19 +1748,6 @@ $("#gemini-cancel-login").addEventListener("click", () =>
   busy($("#gemini-cancel-login"), "취소 중…", async () => {
     await call(api.cancelCliLogin("gemini"));
     await refreshStatus();
-  }),
-);
-$("#load-gemini-models").addEventListener("click", () =>
-  busy($("#load-gemini-models"), "조회 중…", async () => {
-    const rows = await call(api.geminiModels());
-    const selected = connection?.gemini.modelId;
-    $("#gemini-model").replaceChildren(
-      new Option("Gemini 모델 선택", ""),
-      ...rows.map((row) => new Option(row.name, row.id)),
-    );
-    if (rows.some((row) => row.id === selected))
-      $("#gemini-model").value = selected;
-    if (!rows.length) toast("Gemini CLI가 모델 목록을 제공하지 않았습니다.");
   }),
 );
 $("#gemini-model").addEventListener("change", async (event) => {
@@ -2272,9 +2229,6 @@ $("#gpt-model").addEventListener("change", () => {
     toast(error.message, "error"),
   );
 });
-$("#startup-dialog").addEventListener("cancel", (event) =>
-  event.preventDefault(),
-);
 const tourSteps = [
   ["새 프로젝트", "상단 또는 왼쪽의 새 프로젝트에서 작업 폴더를 선택하세요. 왼쪽에서 프로젝트별 대화를 다시 열 수 있습니다."],
   ["계정 연결과 AI 역할 변경", "계정 연결에서 기존 CLI 연결을 확인하세요. AI 역할 변경에서 컨트롤 타워와 기능 구현, UI, 테스트 담당을 정합니다."],

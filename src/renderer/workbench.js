@@ -14,7 +14,7 @@ function node(tag, text, className) {
   if (className) element.className = className;
   return element;
 }
-export { renderTeamEditor, readTeamEditor, resizeEditor } from "./role-editor.js";
+export { renderTeamEditor, readTeamEditor, resizeEditor, refreshEditorModels } from "./role-editor.js";
 export function renderPanelTeam(team) {
   const workers = document.querySelector(".workers");
   workers.dataset.count = String(team.length - 1);

@@ -36,6 +36,7 @@ import { Preferences } from "./core/preferences.js";
 import { Conversations } from "./core/conversations.js";
 import { AgentChat } from "./core/agent-chat.js";
 import { AuxiliaryServices } from "./core/services.js";
+import {ModelCatalog} from './core/model-catalog.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 app.setName("CW_Handsoff_sys");
@@ -76,6 +77,201 @@ let window,
 let preferences, conversations, agentChat, auxiliary;
 let restorePromise;
 let gptRestoreState = null;
+let splash,
+  catalog,
+  startupPromise,
+  mainRevealed = false,
+  closingSplash = false;
+let shuttingDown=false;
+let startupPhase = {
+  percent: 0,
+  message: "상자 챙기고 출근하는 중…",
+  detail: "AI들이 모이면 작업대를 열어드릴게요.",
+  stage: "앱 시작 준비",
+};
+const splashPath = join(directory, "renderer/splash.html"),
+  splashURL = pathToFileURL(splashPath).href;
+function startupProgress(percent, message, detail, stage) {
+  startupPhase = {
+    percent: Math.max(startupPhase.percent, percent),
+    message,
+    detail,
+    stage,
+  };
+  if (splash && !splash.isDestroyed())
+    splash.webContents.send("startup:progress", startupPhase);
+}
+async function createSplash() {
+  splash = new BrowserWindow({
+    width: 520,
+    height: 397,
+    center: true,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    show: false,
+    title: "Hands off 시작 준비",
+    backgroundColor: "#ffffff",
+    autoHideMenuBar: true,
+    icon: join(directory, "renderer/assets/mascot.png"),
+    webPreferences: {
+      preload: join(directory, "startup-preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      devTools: !app.isPackaged,
+      webSecurity: true,
+      webviewTag: false,
+    },
+  });
+  splash.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  for (const event of ["will-navigate", "will-frame-navigate", "will-redirect"])
+    splash.webContents.on(event, (event) => event.preventDefault());
+  splash.on("closed", () => {
+    if (!closingSplash&&!shuttingDown) app.quit();
+  });
+  ipcMain.on("startup:cancel", (event) => {
+    if (
+      splash &&
+      !splash.isDestroyed() &&
+      event.sender === splash.webContents &&
+      event.senderFrame === splash.webContents.mainFrame &&
+      event.senderFrame.url === splashURL
+    )
+      {shuttingDown=true;app.quit();}
+  });
+  await splash.loadFile(splashPath);
+  splash.show();
+  startupProgress(
+    5,
+    "상자 챙기고 출근하는 중…",
+    "작업대 전원을 켜고 있어요.",
+    "시작 준비",
+  );
+}
+async function gptModelRows() {
+  const current = await status();
+  if (!current.gpt.connected)
+    return {
+      rows: [],
+      state: "login_required",
+      message: "GPT 계정을 연결하면 모델을 자동으로 준비합니다.",
+    };
+  if (current.gpt.source === "codex") return codex.models();
+  const token = await auth.access();
+  const response = await fetch("https://api.openai.com/v1/models", {
+    headers: { Authorization: `Bearer ${token}` },
+    redirect: "error",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok)
+    throw new Error(
+      `GPT 모델 목록을 확인하지 못했습니다. HTTP ${response.status}`,
+    );
+  const body = await response.json();
+  if (!Array.isArray(body.models))
+    throw new Error("공식 로그인 모델 목록 형식을 확인하지 못했습니다.");
+  return body.models
+    .filter((row) => row.visibility === "list")
+    .map((row) => ({ id: row.slug, name: row.display_name }));
+}
+function refreshCatalog(provider, invalidate = false) {
+  if (!catalog) return Promise.resolve({});
+  if (provider) {
+    if (invalidate) catalog.invalidate(provider);
+    return catalog.refresh(provider);
+  }
+  if (invalidate)
+    for (const id of ["gpt", "claude", "grok", "gemini"])
+      catalog.invalidate(id);
+  return catalog.refreshAll();
+}
+async function prepareStartup() {
+  startupProgress(
+    15,
+    "프로젝트 선반 정리 중…",
+    "지난 작업과 설정을 제자리에 놓고 있어요.",
+    "프로젝트·설정",
+  );
+  const [projectData, settings] = await Promise.all([
+    projects.list(),
+    preferences.get(),
+  ]);
+  startupProgress(
+    28,
+    "AI 출석부 확인 중…",
+    "이 컴퓨터에 저장된 로그인만 확인해요.",
+    "연결 상태",
+  );
+  let restored;
+  try {
+    restored = await restoreConnections();
+  } catch {}
+  const current = await status();
+  restored ??= { ...current, browser: await browser.settings() };
+  startupProgress(
+    40,
+    "AI 모델들 집합 중…",
+    "GPT · Claude · Cursor · Gemini의 선택지를 모으고 있어요.",
+    "모델 목록",
+  );
+  const models = await catalog.refreshAll((done, total, provider) =>
+    startupProgress(
+      40 + Math.round((done / total) * 45),
+      "AI 모델들 집합 중…",
+      `${{ gpt: "GPT", claude: "Claude", grok: "Cursor", gemini: "Gemini" }[provider]} 확인 완료 · ${done}/${total}`,
+      "모델 목록",
+    ),
+  );
+  startupProgress(
+    90,
+    "상자는 챙겼고, 작업대 배치 중…",
+    "목록과 화면을 연결하고 있어요.",
+    "화면 준비",
+  );
+  return {
+    projects: projectData,
+    preferences: settings,
+    restored,
+    status: current,
+    catalog: models,
+  };
+}
+async function revealMain() {
+  if (!startupPromise) throw new Error("시작 준비를 먼저 완료해야 합니다.");
+  await startupPromise;
+  if (mainRevealed) return true;
+  startupProgress(
+    100,
+    "준비 끝! 이제 일을 맡겨주세요.",
+    "작업대 문을 열고 있어요.",
+    "준비 완료",
+  );
+  mainRevealed = true;
+  setTimeout(async () => {
+    if (shuttingDown||!window || window.isDestroyed()) return;
+    closingSplash = true;
+    if(splash&&!splash.isDestroyed())splash.destroy();
+    window.show();
+    window.focus();
+    if (
+      profileDirectory ||
+      (!app.isPackaged && process.env.TOWER_TEST_USER_DATA)
+    )
+      await writeFile(
+        join(app.getPath("userData"), "startup-ready.json"),
+        JSON.stringify({
+          version: app.getVersion(),
+          percent: 100,
+          mainVisible: window.isVisible(),
+          splashClosed: !splash || splash.isDestroyed(),
+          checkedAt: new Date().toISOString(),
+        }),
+      ).catch(() => {});
+  }, 220);
+  return true;
+}
 const once = new Set();
 const allowedLinks = {
   keys: "https://platform.openai.com/api-keys",
@@ -96,6 +292,8 @@ const allowedLinks = {
 function notify(value) {
   if (window && !window.isDestroyed())
     window.webContents.send("tower:event", value);
+  if(!shuttingDown&&mainRevealed&&['auth','codex','claude','grok','gemini'].includes(value.type)&&value.state==='connected')
+    void refreshCatalog(['auth','codex'].includes(value.type)?'gpt':value.type,true);
 }
 function handle(channel, action) {
   ipcMain.handle(channel, async (event, ...args) => {
@@ -306,6 +504,7 @@ async function restoreConnections() {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => {
+    if(!mainRevealed&&splash&&!splash.isDestroyed()){splash.show();splash.focus();return;}
     if (window) {
       if (window.isMinimized()) window.restore();
       window.focus();
@@ -313,10 +512,14 @@ else {
   });
   app.whenReady().then(async () => {
     try {
+      await createSplash();
+      if(shuttingDown)return;
       store = new Store(app.getPath("userData"), safeStorage);
       await store.init();
+      if(shuttingDown)return;
       persistentSession = new PersistentSession(store);
       await persistentSession.open();
+      if(shuttingDown)return;
       browser = new BrowserOpener(store, (url) => shell.openExternal(url));
       codex = new CodexConnection(store.directory, notify, {
         open: (url) => browser.open(url),
@@ -352,6 +555,12 @@ else {
           : null,
       });
       roles = new RoleAssignments(projects);
+      catalog=new ModelCatalog({
+        gpt:gptModelRows,
+        claude:async()=>({rows:['sonnet','opus','haiku'].map(id=>({id,name:`${id} · Claude CLI 공식 별칭`})),state:(await claude.status()).connected?'ready':'login_required',message:'Claude CLI 공식 모델 별칭입니다. 실제 사용 권한은 실행 시 확인합니다.'}),
+        grok:async()=>(await grok.status()).connected?grok.models():{rows:[],state:'login_required',message:'Cursor 로그인 후 모델을 자동으로 준비합니다.'},
+        gemini:async()=>(await gemini.status()).connected?gemini.models():{rows:[],state:'login_required',message:'Google 계정 연결 후 모델을 자동으로 준비합니다.'},
+      },{notify:value=>notify({type:'model-catalog',catalog:value})});
       const codexUsage = new CodexUsage((response) =>
         usage?.pushCodex(response),
       );
@@ -424,6 +633,17 @@ else {
       );
       session.defaultSession.setPermissionCheckHandler(() => false);
       handle("tower:status", status);
+      handle('tower:startup',async()=>{
+        const first=!startupPromise;startupPromise??=prepareStartup();const boot=await startupPromise;
+        if(first||!mainRevealed)return boot;
+        const current=await status();
+        return{projects:await projects.list(),preferences:await preferences.get(),restored:{...current,session:{...current.session,firstLaunch:false},browser:await browser.settings()},status:current,catalog:catalog.snapshot()};
+      });
+      handle('tower:startup-state',()=>({...startupPhase,mainVisible:mainRevealed}));
+      handle('tower:startup-ready',revealMain);
+      handle('tower:startup-failed',message=>{if(shuttingDown)return;dialog.showErrorBox('Hands off 시작 오류',publicError(new Error(String(message).slice(0,1500))));app.quit();});
+      handle('tower:model-catalog',()=>catalog.snapshot());
+      handle('tower:refresh-model-catalog',()=>refreshCatalog(null,true));
       const inbox = new NotificationInbox(store);
       handle("tower:notifications", () => inbox.list());
       handle("tower:add-notification", (value) => inbox.add(value));
@@ -447,10 +667,10 @@ else {
       handle("tower:login", (id) => exclusive("account", () => auth.start(id)));
       handle("tower:cancel-login", () => auth.cancel());
       handle("tower:select-account", (id) =>
-        exclusive("account", () => auth.select(id)),
+        exclusive("account", async() => {const result=await auth.select(id);void refreshCatalog('gpt',true);return result;}),
       );
       handle("tower:sign-out", () =>
-        exclusive("account", () => auth.signOut()),
+        exclusive("account", async() => {const result=await auth.signOut();void refreshCatalog('gpt',true);return result;}),
       );
       handle("tower:claude-login", (forceLogin) =>
         claude.connect({ forceLogin: forceLogin === true }),
@@ -458,8 +678,8 @@ else {
       handle("tower:grok-login", (forceLogin) =>
         grok.connect({ forceLogin: forceLogin === true }),
       );
-      handle("tower:grok-models", () => grok.models({ force: true }));
-      handle("tower:select-grok-model", (modelId) => grok.selectModel(modelId));
+      handle("tower:grok-models", () => catalog.rows('grok'));
+      handle("tower:select-grok-model", async(modelId) => {validateModelId(modelId);if(!catalog.rows('grok').some(row=>row.id===modelId))throw new Error('준비된 Cursor 목록에서 모델을 선택하세요.');await store.write('cursor-model',{modelId});return grok.selection();});
       handle("tower:gemini-login", () => gemini.connect());
       handle("tower:codex-login", (force) =>
         codex.connect({ forceLogin: force === true }),
@@ -472,6 +692,7 @@ else {
           value.gptSource = source;
           delete value.gptModel;
           await store.write("execution-config", value);
+          void refreshCatalog('gpt',true);
           return value;
         }),
       );
@@ -485,9 +706,9 @@ else {
         }),
       );
       handle("tower:install-gemini", () => gemini.install());
-      handle("tower:gemini-models", () => gemini.models({ force: true }));
+      handle("tower:gemini-models", () => catalog.rows('gemini'));
       handle("tower:select-gemini-model", async (modelId) => {
-        if (!(await gemini.models()).some((row) => row.id === modelId))
+        if (!catalog.rows('gemini').some((row) => row.id === modelId))
           throw new Error("현재 Gemini 목록의 모델을 선택하세요.");
         await store.write("gemini-model", { modelId });
         return { modelId };
@@ -749,26 +970,7 @@ else {
         await workflow.stopAndWait(id);
         return workflow.current(id);
       });
-      handle("tower:models", async () => {
-        const current = await status();
-        if (current.gpt.source === "codex") return codex.models();
-        const token = await auth.access();
-        const response = await fetch("https://api.openai.com/v1/models", {
-          headers: { Authorization: `Bearer ${token}` },
-          redirect: "error",
-          signal: AbortSignal.timeout(30000),
-        });
-        if (!response.ok)
-          throw new Error(
-            `모델 목록을 불러오지 못했습니다. HTTP ${response.status}`,
-          );
-        const body = await response.json();
-        if (!Array.isArray(body.models))
-          throw new Error("공식 로그인 모델 목록 형식을 확인하지 못했습니다.");
-        return body.models
-          .filter((model) => model.visibility === "list")
-          .map((model) => ({ id: model.slug, name: model.display_name }));
-      });
+      handle("tower:models", () => catalog.rows("gpt"));
       handle("tower:generate-image", (id, prompt, provider, conversationId) =>
         workflow.runs.get(id)?.state.status === "awaiting_design"
           ? workflow.reviseDesign(id, prompt, provider, conversationId)
@@ -871,14 +1073,15 @@ else {
       window.webContents.on("will-attach-webview", (event) =>
         event.preventDefault(),
       );
-      window.once("ready-to-show", () => window.show());
       await window.loadFile(rendererPath);
     } catch (error) {
+      if(shuttingDown)return;
       dialog.showErrorBox("CW_Handsoff_sys", publicError(error));
       app.quit();
     }
   });
   app.on("before-quit", () => {
+    shuttingDown=true;
     auth?.cancel();
     claude?.cancel();
     grok?.cancel();
