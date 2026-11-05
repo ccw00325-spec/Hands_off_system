@@ -3,7 +3,7 @@ const git = (...args) => execFileSync('git', args, {encoding:'utf8', stdio:['ign
 if (git('branch', '--show-current') !== 'main') throw new Error('Platform publication requires the reviewed main branch.');
 if (git('diff', '--name-only') || git('diff', '--cached', '--name-only')) throw new Error('Commit the reviewed tracked changes before syncing.');
 const head = git('rev-parse', 'HEAD');
-for (const [remote, repository] of [['origin','Hands_off_system_Window'], ['mac','Hands_off_system_Mac']]) {
+for (const [remote, repository] of [['origin','Hands_off_system_window'], ['mac','Hands_off_system_mac']]) {
   const url = git('remote', 'get-url', remote);
   if (url !== `https://github.com/ccw00325-spec/${repository}.git`) throw new Error(`Unexpected ${remote} target; refusing to publish.`);
   execFileSync('git', ['push', remote, 'HEAD:refs/heads/main'], {stdio:'inherit'});

@@ -18,7 +18,7 @@ D5. 일반 테스트가 기본이며 뮤테이션은 고급 선택이다. 선택
 
 D6. 로딩 중 Node 24+·npm·Git·Docker 엔진/이미지·선택 AI CLI를 확인하고 준비 안내를 보인다. 사용하지 않는 CLI까지 요구하지 않는다. 고정 공식 HTTPS URL만 열고 사용자가 직접 설치한다. 설치 안내를 건너뛰어도 미검증 작업이 성공으로 바뀌지는 않는다.
 
-D7. `_Window`, `_Mac` 저장소는 같은 공유 소스·버전·커밋을 유지한다. Windows x64, Mac arm64/x64 각각의 환경에서 검사한다. Mac Developer ID 서명·공증은 이번 승인에 필요한 인증서가 없어 제공하지 않는다.
+D7. `_window`, `_mac` 저장소는 같은 공유 소스·버전·커밋을 유지한다. Windows x64, Mac arm64/x64 각각의 환경에서 검사한다. Mac Developer ID 서명·공증은 이번 승인에 필요한 인증서가 없어 제공하지 않는다.
 
 ## Context → Trigger → Reaction
 

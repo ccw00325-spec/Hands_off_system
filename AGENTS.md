@@ -2,8 +2,8 @@
 
 The owner requested that every update be maintained and pushed to both public repositories:
 
-- Windows: https://github.com/ccw00325-spec/Hands_off_system_Window (remote `origin`)
-- macOS: https://github.com/ccw00325-spec/Hands_off_system_Mac (remote `mac`)
+- Windows: https://github.com/ccw00325-spec/Hands_off_system_window (remote `origin`)
+- macOS: https://github.com/ccw00325-spec/Hands_off_system_mac (remote `mac`)
 
 Keep one shared source history and version. Implement and verify changes here, commit selected project files, then run `npm run sync:platforms` to push that commit to both repositories. Do not force-push or overwrite divergent remote work. If either push or platform verification fails, fix it or report that exact outstanding limitation; never say both platforms were verified because Windows passed. Check each remote HEAD before reporting completion.
 

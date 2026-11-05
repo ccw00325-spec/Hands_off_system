@@ -8,12 +8,12 @@ Windows x64 · macOS arm64/x64 · v0.2.4
 
 | 사용할 PC | 저장소와 빌드 |
 | --- | --- |
-| Windows x64 | [Window 저장소](https://github.com/ccw00325-spec/Hands_off_system_Window) · [Windows 빌드·검증](https://github.com/ccw00325-spec/Hands_off_system_Window/actions/workflows/platforms.yml) |
-| MacBook · Apple Silicon / Intel | [Mac 저장소](https://github.com/ccw00325-spec/Hands_off_system_Mac) · [Mac 빌드·검증](https://github.com/ccw00325-spec/Hands_off_system_Mac/actions/workflows/platforms.yml) |
+| Windows x64 | [Window 저장소](https://github.com/ccw00325-spec/Hands_off_system_window) · [Windows 빌드·검증](https://github.com/ccw00325-spec/Hands_off_system_window/actions/workflows/platforms.yml) |
+| MacBook · Apple Silicon / Intel | [Mac 저장소](https://github.com/ccw00325-spec/Hands_off_system_mac) · [Mac 빌드·검증](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/workflows/platforms.yml) |
 
 두 저장소는 같은 소스와 버전을 사용합니다. 업데이트는 양쪽에 함께 푸시하고, 각 OS에서 빌드·검증합니다. Mac의 `.dmg`·`.zip`은 ad-hoc 서명으로 빌드하며 **Apple Developer ID 서명·공증은 적용하지 않았습니다**. [설치·플랫폼 안내](docs/platform-setup.md)
 
-v0.2.4 배포 파일: [Windows x64 다운로드가 있는 검증 실행](https://github.com/ccw00325-spec/Hands_off_system_Window/actions/runs/42114719827) · [Mac Apple Silicon / Intel 다운로드가 있는 검증 실행](https://github.com/ccw00325-spec/Hands_off_system_Mac/actions/runs/42114729397). 로그인 후 페이지 아래 **Artifacts**에서 자신의 환경에 맞는 파일을 받으세요. 패키지는 30일 보관하며 [검증 기록의 SHA-256](VALIDATION.md)으로 파일을 비교할 수 있습니다.
+v0.2.4 배포 파일: [Windows x64 다운로드가 있는 검증 실행](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42114719827) · [Mac Apple Silicon / Intel 다운로드가 있는 검증 실행](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42114729397). 로그인 후 페이지 아래 **Artifacts**에서 자신의 환경에 맞는 파일을 받으세요. 패키지는 30일 보관하며 [검증 기록의 SHA-256](VALIDATION.md)으로 파일을 비교할 수 있습니다.
 
 **만들고 싶은 앱을 설명하면, 역할을 맡은 AI들이 같은 작업 폴더에서 설계·구현·검증을 이어가는 PC용 작업 공간입니다.**
 
@@ -51,8 +51,8 @@ AI마다 같은 요구사항을 다시 설명하고, 한쪽에서 만든 코드�
 처음에는 **이미 사용하는 AI 하나를 두 패널에 배치**해 시작할 수 있습니다. 이미지 시안 생성에는 별도 개인 API 키가 필요하며, AI 구독과 이미지 API 과금은 각각의 공급자 조건을 따릅니다. Hands off를 실행한다고 다른 사람의 AI 계정이나 개발자 키가 제공되는 것은 아닙니다.
 
 ```powershell
-git clone https://github.com/ccw00325-spec/Hands_off_system_Window.git
-cd Hands_off_system_Window
+git clone https://github.com/ccw00325-spec/Hands_off_system_window.git
+cd Hands_off_system_window
 npm ci
 npm start
 ```

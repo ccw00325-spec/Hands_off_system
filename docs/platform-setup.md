@@ -6,9 +6,9 @@ Mac의 최종 네이티브 검증 대상은 macOS 26 Apple Silicon과 macOS 15 I
 
 | 환경 | 저장소 | 패키지 |
 | --- | --- | --- |
-| Windows x64 | [Hands_off_system_Window](https://github.com/ccw00325-spec/Hands_off_system_Window) | 포터블 `.exe` |
-| Mac Apple Silicon | [Hands_off_system_Mac](https://github.com/ccw00325-spec/Hands_off_system_Mac) | arm64 `.dmg`·`.zip` |
-| Mac Intel | [Hands_off_system_Mac](https://github.com/ccw00325-spec/Hands_off_system_Mac) | x64 `.dmg`·`.zip` |
+| Windows x64 | [Hands_off_system_window](https://github.com/ccw00325-spec/Hands_off_system_window) | 포터블 `.exe` |
+| Mac Apple Silicon | [Hands_off_system_mac](https://github.com/ccw00325-spec/Hands_off_system_mac) | arm64 `.dmg`·`.zip` |
+| Mac Intel | [Hands_off_system_mac](https://github.com/ccw00325-spec/Hands_off_system_mac) | x64 `.dmg`·`.zip` |
 
 저장소의 Actions에서 성공한 `Platform verification and packages` 실행을 열고 자신의 OS·CPU에 맞는 Artifacts를 내려받습니다. GitHub 로그인이 필요하며 파일은 30일 동안 보관합니다. 검증이 실패한 실행에는 배포 패키지를 올리지 않습니다. Mac은 ad-hoc 서명만 사용하므로 Developer ID 서명·Apple 공증을 받은 앱과 다르며 Gatekeeper 경고가 날 수 있습니다. 보안 설정을 전역으로 끄는 절차를 제공하지 않습니다.
 
