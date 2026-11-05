@@ -37,6 +37,7 @@ import { Conversations } from "./core/conversations.js";
 import { AgentChat } from "./core/agent-chat.js";
 import { AuxiliaryServices } from "./core/services.js";
 import {ModelCatalog} from './core/model-catalog.js';
+import { loadLocalWindow } from './core/window-loader.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 app.setName("CW_Handsoff_sys");
@@ -83,6 +84,22 @@ let splash,
   mainRevealed = false,
   closingSplash = false;
 let shuttingDown=false;
+let mainDocumentLoaded = false, workspaceReady = false, revealScheduled = false;
+const startupDiagnostics = [];
+let diagnosticWrite = Promise.resolve();
+function recordStartupFailure(stage, error, attempt) {
+  // Deliberately exclude URLs, paths, exception messages and account data.
+  startupDiagnostics.push({
+    at: new Date().toISOString(), version: app.getVersion(), stage, attempt,
+    code: ['ERR_FAILED', 'ERR_ABORTED', 'ERR_FILE_NOT_FOUND', 'ERR_ACCESS_DENIED', 'ENOENT', 'EACCES'].includes(error.code) ? error.code : 'OTHER',
+    errno: Number.isInteger(error.errno) ? error.errno : null,
+  });
+  diagnosticWrite = diagnosticWrite.catch(() => {}).then(async () => {
+    await mkdir(app.getPath('userData'), { recursive: true });
+    await writeFile(join(app.getPath('userData'), 'startup-diagnostics.json'), JSON.stringify(startupDiagnostics.slice(-30), null, 2), { mode: 0o600 });
+  }).catch(() => {});
+  return diagnosticWrite;
+}
 let startupPhase = {
   percent: 0,
   message: "상자 챙기고 출근하는 중…",
@@ -141,7 +158,11 @@ async function createSplash() {
     )
       {shuttingDown=true;app.quit();}
   });
-  await splash.loadFile(splashPath);
+  const loaded = await loadLocalWindow(splash, splashPath, {
+    isClosing: () => shuttingDown,
+    onFailure: (error, attempt) => recordStartupFailure('splash', error, attempt),
+  });
+  if (!loaded || shuttingDown) return;
   splash.show();
   startupProgress(
     5,
@@ -241,20 +262,27 @@ async function prepareStartup() {
 async function revealMain() {
   if (!startupPromise) throw new Error("시작 준비를 먼저 완료해야 합니다.");
   await startupPromise;
-  if (mainRevealed) return true;
+  workspaceReady = true;
+  scheduleMainReveal();
+  return true;
+}
+function scheduleMainReveal() {
+  if (mainRevealed || revealScheduled || !mainDocumentLoaded || !workspaceReady || shuttingDown) return;
+  revealScheduled = true;
   startupProgress(
     100,
     "준비 끝! 이제 일을 맡겨주세요.",
     "작업대 문을 열고 있어요.",
     "준비 완료",
   );
-  mainRevealed = true;
   setTimeout(async () => {
-    if (shuttingDown||!window || window.isDestroyed()) return;
+    revealScheduled = false;
+    if (shuttingDown||!window || window.isDestroyed() || !mainDocumentLoaded || !workspaceReady) return;
     closingSplash = true;
     if(splash&&!splash.isDestroyed())splash.destroy();
     window.show();
     window.focus();
+    mainRevealed = true;
     if (
       profileDirectory ||
       (!app.isPackaged && process.env.TOWER_TEST_USER_DATA)
@@ -270,7 +298,6 @@ async function revealMain() {
         }),
       ).catch(() => {});
   }, 220);
-  return true;
 }
 const once = new Set();
 const allowedLinks = {
@@ -1073,10 +1100,17 @@ else {
       window.webContents.on("will-attach-webview", (event) =>
         event.preventDefault(),
       );
-      await window.loadFile(rendererPath);
+      mainDocumentLoaded = await loadLocalWindow(window, rendererPath, {
+        isClosing: () => shuttingDown,
+        beforeAttempt: () => { mainDocumentLoaded = false; workspaceReady = false; },
+        onRetry: (attempt) => startupProgress(startupPhase.percent, '작업대가 잠깐 삐끗했어요. 다시 여는 중…', `화면 불러오기 재시도 ${attempt}/3`, '화면 복구'),
+        onFailure: (error, attempt) => recordStartupFailure('workspace', error, attempt),
+      });
+      scheduleMainReveal();
     } catch (error) {
       if(shuttingDown)return;
-      dialog.showErrorBox("CW_Handsoff_sys", publicError(error));
+      await recordStartupFailure('startup', error, null);
+      dialog.showErrorBox("CW_Handsoff_sys", "시작 화면을 준비하지 못했습니다. 앱을 다시 실행해 주세요.\n반복되면 startup-diagnostics.json의 오류 코드를 확인해 주세요.\n\n" + publicError(error));
       app.quit();
     }
   });

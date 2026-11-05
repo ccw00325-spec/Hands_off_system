@@ -4,7 +4,7 @@
 
 # CW_Handsoff_sys · Hands off System
 
-Windows x64 · v0.2.1
+Windows x64 · v0.2.2
 
 **프로젝트 폴더 하나에서 AI에게 일을 나눠주고, 시안 승인부터 테스트 결과 확인까지 이어가는 데스크톱 앱입니다.**
 
@@ -35,6 +35,8 @@ npm start
 앱이 열리면 첫 실행 안내가 나옵니다. **다음**으로 버튼의 쓰임을 살펴보거나 **건너뛰기**를 누를 수 있습니다. 상단의 **Hands off 가이드**에서 언제든 다시 열 수 있습니다.
 
 앱이 열리기 전에는 화면 중앙의 **흰색 시작 창**에서 로그인 상태, AI 모델 목록, 프로젝트와 화면을 준비합니다. 캐릭터가 돌에 걸렸다가 박스를 주워 다시 걷는 동안 준비 단계가 진행되고, 바가 100%가 되면 작업 창이 열립니다. 진행률은 남은 시간의 예측치가 아닌 준비 단계 기준입니다.
+
+화면을 불러오는 중 일시적인 `ERR_FAILED (-2)` 또는 `ERR_ABORTED`가 발생하면 최대 2회 다시 시도합니다. 화면 로딩과 앱 초기화가 모두 끝난 뒤 작업 창을 표시하며, 복구 도중 시작 창을 닫으면 종료합니다. 파일이 없거나 접근이 차단된 오류는 숨기지 않습니다. 계속 실패한다면 앱 데이터 폴더의 `startup-diagnostics.json`에서 오류 코드와 시도 횟수를 확인할 수 있습니다. 이 기록에는 계정·키·대화·파일 경로를 넣지 않습니다. 소스 실행은 `.runtime`, Windows 배포판은 `%APPDATA%\agent-control-tower`에 저장합니다.
 
 ![AI 모델 목록을 준비하는 실제 시작 창의 캐릭터 애니메이션 한 장면](docs/screenshots/startup.png)
 
@@ -199,7 +201,7 @@ UI 작업이 포함되고 시안 승인 설정이 켜져 있으면, 컨트롤 �
 <details>
 <summary>직접 빌드와 개발 검증</summary>
 
-Windows에서 포터블 빌드를 만들면 `release/CW_Handsoff_sys 0.2.1.exe`가 생성됩니다.
+Windows에서 포터블 빌드를 만들면 `release/CW_Handsoff_sys 0.2.2.exe`가 생성됩니다.
 
 ```powershell
 npm run package:win -- --config.compression=store
