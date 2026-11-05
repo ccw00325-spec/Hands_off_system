@@ -2,7 +2,7 @@
 
 같은 소스와 버전을 두 저장소에 함께 반영합니다.
 
-Mac의 네이티브 검증 대상은 macOS 15의 Apple Silicon과 Intel 러너입니다. 그보다 오래된 모든 macOS에서의 실행까지 확인했다고 의미하지는 않습니다.
+Mac의 최종 네이티브 검증 대상은 macOS 26 Apple Silicon과 macOS 15 Intel 러너입니다. macOS 15 Apple Silicon도 앞선 배치에서 검사했지만, 해당 러너의 대기가 길어 최종 검사는 macOS 26에서 진행합니다. 다른 모든 macOS 버전의 실행까지 확인했다는 의미는 아닙니다.
 
 | 환경 | 저장소 | 패키지 |
 | --- | --- | --- |
@@ -49,6 +49,6 @@ docker pull node:24-bookworm-slim
 
 Windows에서는 `npm run package:win`, Mac에서는 `npm run package:mac -- --arm64` 또는 `--x64`를 실행합니다. Mac 앱의 빌드·서명·네이티브 실행 검증은 macOS에서 합니다. [electron-builder의 플랫폼별 빌드 안내](https://www.electron.build/v26/docs/features/multi-platform-build/)
 
-Mac CI는 `macos-15` arm64와 `macos-15-intel` x64에서 각각 단위 검사·Electron 시뮬레이션·패키지 고지·fuse·서명 무결성·빈 프로필의 실제 앱 시작을 확인합니다. Docker 격리는 Ubuntu 러너에서 실제 컨테이너로 검사합니다. [GitHub 러너 사양](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job)
+Mac CI는 `macos-26` arm64와 `macos-15-intel` x64에서 각각 단위 검사·Electron 시뮬레이션·패키지 고지·fuse·서명 무결성·빈 프로필의 실제 앱 시작을 확인합니다. Docker 격리는 Ubuntu 러너에서 실제 컨테이너로 검사합니다. [GitHub 러너 사양](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job)
 
 유지보수자는 변경을 검증하고 커밋한 뒤 `npm run sync:platforms`를 실행합니다. 이 명령은 승인된 `origin`·`mac` 주소를 확인하고 같은 커밋을 양쪽 main에 푸시한 뒤 원격 HEAD를 대조합니다. 강제 푸시는 하지 않습니다. 한쪽 반영이 실패하면 성공으로 보고하지 않으며 해당 차이를 해결해야 합니다. 이 원칙은 루트 [AGENTS.md](../AGENTS.md)에도 기록합니다.

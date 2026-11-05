@@ -702,6 +702,7 @@ try {
       (event) => event.from === "gpt" && event.to === "grok",
     ),
   );
+  await openWorkflow(page);
   await page.locator(".mascot-motion-toggle").click();
   assert.equal(await page.locator("#courier").isHidden(), true);
   await page.locator(".mascot-motion-toggle").click();
