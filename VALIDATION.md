@@ -5,7 +5,16 @@
 - 승인된 캐릭터 ICO를 Windows 시작·메인 창과 작업표시줄 속성에 직접 지정하고 알림 바로가기 아이콘도 지정했다. 배포 리소스의 ICO가 원본과 일치하는지 검사한다. 실제 Win32 창에서 아이콘을 읽고 포터블 실행 파일의 아이콘도 추출해 원본 ICO와 픽셀 비교했다. 두 검사 모두 통과했다.
 - 로컬 단위·통합 **206개**, 기존 Electron **41개**, 역할·요청 안내 UI **7개**, 설치 UI **4개**를 통과했다. 반복 오류의 순차 만료, 잘못된 요청의 워크플로 미생성, 올바른 담당 모델 설정으로 이동과 설정 후 정상 실행을 확인했다. AI 응답과 도구 상태는 명시적 시뮬레이션 값이며 유료 호출은 0회다.
 - Windows 새 포터블은 소스 **98개**·법적 고지 **2개**·보안 fuse **6개** 일치, 허용 목록 밖 파일 0개다. 별도 프로필에서 메인 창·시작 창 전환, 진행률 100%, ASAR 일치와 개발자 vault 미복사를 확인했다. 기존 실행 파일이 사용 중이어서 새 패키지는 우선 `artifacts/readiness-release`에서 검증했다. SHA-256: `0625ef7ed1c26d9ebd13444a7548626a2a92bda65933d52b58579e6265275b76`.
-- 원격 Windows·Mac Intel/Apple Silicon의 전체 검증은 푸시 후 별도 확인한다.
+- 실행 커밋 `a477056d737c1c9b1a8a6bb2caf4adec9aaa5c4f`의 [Windows·Linux CI](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42192680823)와 [Mac CI](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42192692200)가 모두 성공했다. Windows x64·Mac Apple Silicon·Mac Intel 각각 단위·통합 **206개**, 화면·시작 **67개(41+7+6+3+4+6)**, 전체 npm 감사와 실제 패키지 빌드·별도 프로필 시작을 통과했다. 각 패키지의 소스 98개·법적 고지 2개·fuse 6개가 일치하고 허용 목록 밖 파일은 0개다. Linux Docker 격리 검사도 통과했다.
+- Windows CI에서도 실제 창·실행 파일 아이콘의 캐릭터 일치를 확인했다. Mac의 코드 서명 무결성 검사는 ad-hoc이며 Developer ID 서명·공증은 적용하지 않았다. README의 패키지 링크도 이번 검증 실행으로 갱신했다.
+- 로컬 `release/CW_Handsoff_sys 0.1.0.exe`는 사용자가 실행 중이어서 덮어쓰기·안전한 이름 변경 모두 OS 파일 잠금으로 차단됐다. 기존 사용자 앱은 종료하지 않았으며, 검증된 새 파일은 `artifacts/readiness-release/CW_Handsoff_sys 0.1.0.exe`에 있다. 앱 종료 후 기존 경로 교체가 필요하다. 파일 잠금을 기다리던 개발 빌드 프로세스만 중단했고 실패한 임시 교체 파일은 제거했다.
+
+| 최신 0.1.0 패키지 | SHA-256 |
+| --- | --- |
+| 로컬 검증 폴더 Windows 포터블 | `0625ef7ed1c26d9ebd13444a7548626a2a92bda65933d52b58579e6265275b76` |
+| Windows CI 포터블 | `1ae6d7e11b8cca6361edb766565bafd10f4821504c4a8262fa2bc2efe514217f` |
+| Mac arm64 `.zip` | `43beb4e825452cf62d65a9c767dfa21cfd47b505bb4ae06fee80ba6379ab78f2` |
+| Mac x64 `.zip` | `32101990fe698d61cb3f5821c60a6623b2f4dd78aa9ad4741499d2d8bee0684a` |
 
 # 이전 보안 업데이트 · minimatch · 2026-11-06
 
