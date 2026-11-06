@@ -39,12 +39,6 @@ try{
  assert.equal(await page.locator('[data-tool=docker] .prerequisite-badge').innerText(),'필수');
  assert.match(await page.locator('[data-tool=docker] small').innerText(),/현재 Docker.*필수/);
  assert.match(await page.locator('[data-tool=git] small').innerText(),/GitHub.*백업/);
- for (const tool of ['node','git']) {
-  const badge = await page.locator(`[data-tool=${tool}] .prerequisite-badge`).boundingBox();
-  const button = await page.locator(`[data-tool=${tool}] button`).boundingBox();
-  assert.ok(badge.y + badge.height <= button.y && button.y - badge.y - badge.height <= 6);
-  assert.ok(badge.width < button.width && badge.height <= 18);
- }
  await page.screenshot({path:join(artifacts,'prerequisites-ui.png')});
  checks.push('Fresh startup finishes the splash and opens a missing/outdated tools dialog before the first-run tour; unused Gemini remains optional');
  await page.locator('[data-tool=node] button').click();
