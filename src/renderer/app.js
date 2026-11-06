@@ -2481,10 +2481,11 @@ function showPrerequisites(report) {
     const purpose = document.createElement('small'); purpose.textContent = row.purpose; title.append(purpose);
     const state = document.createElement('div'); state.className = 'prerequisite-state'; state.dataset.ready = String(row.state === 'ready');
     const badge = document.createElement('span'); badge.className = 'prerequisite-badge'; badge.dataset.required = String(row.required); badge.textContent = row.required ? '필수' : '선택';
-    const stateText = document.createElement('span'); stateText.textContent = (labels[row.state] ?? '확인 필요') + (row.version ? ` · ${row.version}` : ''); state.append(badge, stateText);
+    const stateText = document.createElement('span'); stateText.textContent = (labels[row.state] ?? '확인 필요') + (row.version ? ` · ${row.version}` : ''); state.append(stateText);
     const button = document.createElement('button'); button.type = 'button'; button.textContent = row.state === 'ready' ? '공식 안내' : '설치 안내 열기';
     button.addEventListener('click', () => busy(button, '여는 중…', () => call(api.openInstallSite(row.id))));
-    item.append(title, state, button); list.append(item);
+    const actions = document.createElement('div'); actions.className = 'prerequisite-actions'; actions.append(badge, button);
+    item.append(title, state, actions); list.append(item);
   }
   $('#continue-prerequisites').textContent = report.needsAttention ? '나중에 준비하고 둘러보기' : '준비 완료 · 시작하기';
   if (!$('#prerequisites-dialog').open) $('#prerequisites-dialog').showModal();
