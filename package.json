@@ -16,6 +16,7 @@
     "version:next": "node scripts/release-version.mjs --next",
     "test": "node --test test/*.test.js",
     "check": "node scripts/check.mjs",
+    "check:dependencies": "node scripts/check-build-dependencies.mjs",
     "package:win": "electron-builder --win portable",
     "package:mac": "electron-builder --mac dmg zip --publish never --config.directories.output=release-mac",
     "sync:platforms": "node scripts/sync-platforms.mjs",
@@ -34,6 +35,9 @@
     "@playwright/test": "^1.58.0",
     "electron": "45.2.3",
     "electron-builder": "^26.0.12"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "11.0.1"
   },
   "build": {
     "appId": "dev.agent.controltower",

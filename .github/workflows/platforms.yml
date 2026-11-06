@@ -29,6 +29,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run check:dependencies
+      - run: npm audit --audit-level=moderate
       - run: npm run check
       - run: npm test
       - run: npm run test:desktop
@@ -76,6 +78,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run check:dependencies
+      - run: npm audit --audit-level=moderate
       - run: npm run check
       - run: npm test
       - run: npm run test:desktop

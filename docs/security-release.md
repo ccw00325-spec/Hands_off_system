@@ -20,7 +20,7 @@
 3. PowerShell 7.4 이상에서 `pwsh -File scripts/check-packaged-startup.ps1 -Portable`을 실행해 새 프로필 초기화와 개발자 vault 복사 여부를 확인합니다. GitHub에는 검증한 포터블 파일과 SHA-256만 올립니다.
 4. 코드 서명 여부를 릴리스에 표시합니다. Windows에서 게시자를 검증할 수 있도록 공개 배포 전 신뢰된 서명과 타임스탬프를 적용하는 것을 권장합니다.
 
-개발 도구에 남은 minimatch 자원 소모 자문은 배포 런타임에 포함되지 않습니다. 취약한 주요 버전에 패치가 없는 상태이므로 여러 의존성의 API를 깨는 강제 버전 교체는 적용하지 않았습니다. [GitHub 보안 자문](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+`minimatch` 자원 소모 취약점(GHSA-g3hv-75wg-m249)은 `electron-builder`의 간접 개발 의존성에서 발견되었습니다. 영향 범위인 `>=7.0.0 <11.0.1`에만 npm override를 적용해 `11.0.1`로 교체했습니다. 다른 API를 사용하는 3·5 버전은 이 자문의 영향 범위가 아니므로 유지합니다. 직접 런타임 의존성을 추가해 경고를 숨기지 않습니다. Windows·Mac CI는 잠금 파일의 취약 버전, 빌드 도구의 실제 파일 필터·Mac 패턴 API 호환성, 개발 의존성을 포함한 npm 감사를 검사합니다. [GitHub 보안 자문](https://github.com/advisories/GHSA-g3hv-75wg-m249)
 
 ## 보조 서비스 계정
 
