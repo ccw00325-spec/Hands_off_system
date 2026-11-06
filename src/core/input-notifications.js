@@ -1,27 +1,29 @@
 import { mkdir, lstat } from 'node:fs/promises';
 import { join, dirname, isAbsolute } from 'node:path';
+import { WINDOWS_APP_ID, WINDOWS_DEV_APP_ID, LEGACY_WINDOWS_APP_ID, windowsAppId } from './windows-branding.js';
 
-export const NOTIFICATION_APP_ID = 'dev.agent.controltower';
+export const NOTIFICATION_APP_ID = WINDOWS_APP_ID;
 export const NOTIFICATION_CLSID = '{7A709E29-B21D-4D27-8344-B21C6A963D8E}';
 
-export async function registerNotificationShortcut(app, shell) {
+export async function registerNotificationShortcut(app, shell, branding = {}) {
   if (process.platform !== 'win32') return;
   const target = app.isPackaged ? (process.env.PORTABLE_EXECUTABLE_FILE || process.execPath) : process.execPath;
-  if (!isAbsolute(target) || !(await lstat(target)).isFile()) throw new Error('알림 실행 파일을 확인할 수 없습니다.');
+  if (!isAbsolute(target) || !/^[A-Za-z]:[\\/]/.test(target) || /["\r\n\0]/.test(target) || !(await lstat(target)).isFile()) throw new Error('알림 실행 파일을 확인할 수 없습니다.');
   const folder = join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
   await mkdir(folder, { recursive: true });
-  const shortcut = join(folder, 'CW_Handsoff_sys notifications.lnk');
+  const shortcut = join(folder, 'CW_Handsoff_sys.lnk');
   const existing = await lstat(shortcut).catch(error => { if (error.code !== 'ENOENT') throw error; return null; });
   if (existing) {
-    if (!existing.isFile() || existing.isSymbolicLink() || shell.readShortcutLink(shortcut).appUserModelId !== NOTIFICATION_APP_ID)
+    if (!existing.isFile() || existing.isSymbolicLink() || ![WINDOWS_APP_ID, WINDOWS_DEV_APP_ID, LEGACY_WINDOWS_APP_ID, branding.appId].filter(Boolean).includes(shell.readShortcutLink(shortcut).appUserModelId))
       throw new Error('다른 바로가기를 덮어쓰지 않도록 알림 등록을 중단했습니다.');
   }
   const details = { target, cwd: dirname(target), description: 'Hands off 사용자 답변 알림',
-    icon: app.isPackaged ? target : join(app.getAppPath(), 'build', 'app.ico'), iconIndex: 0,
-    appUserModelId: NOTIFICATION_APP_ID, toastActivatorClsid: NOTIFICATION_CLSID,
+    icon: branding.appIconPath ?? (app.isPackaged ? target : join(app.getAppPath(), 'build', 'app.ico')), iconIndex: 0,
+    appUserModelId: branding.appId ?? windowsAppId(app.isPackaged), toastActivatorClsid: NOTIFICATION_CLSID,
     ...(!app.isPackaged ? { args: `"${app.getAppPath()}"` } : {}) };
   if (!shell.writeShortcutLink(shortcut, existing ? 'update' : 'create', details))
     throw new Error('Windows 알림 바로가기를 등록하지 못했습니다.');
+  return { shortcut, details };
 }
 
 export class InputNotifications {

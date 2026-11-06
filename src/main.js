@@ -41,21 +41,23 @@ import {ModelCatalog} from './core/model-catalog.js';
 import { loadLocalWindow } from './core/window-loader.js';
 import { Prerequisites, INSTALL_SITES } from './core/prerequisites.js';
 import { CallQuota } from './core/call-quota.js';
-import { InputNotifications, registerNotificationShortcut, NOTIFICATION_APP_ID, NOTIFICATION_CLSID } from './core/input-notifications.js';
+import { InputNotifications, registerNotificationShortcut, NOTIFICATION_CLSID } from './core/input-notifications.js';
+import { cacheWindowsIcon, windowsTaskbarDetails, windowsAppId } from './core/windows-branding.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
-const windowIcon = process.platform === 'win32'
+let windowIcon = process.platform === 'win32'
   ? (app.isPackaged ? join(process.resourcesPath, 'app.ico') : join(directory, '../build/app.ico'))
   : join(directory, 'renderer/assets/mascot.png');
+let taskbarDetails;
 function applyTaskbarIcon(target) {
   if (process.platform === 'win32') {
     target.setIcon(windowIcon);
-    target.setAppDetails({ appId: NOTIFICATION_APP_ID, appIconPath: windowIcon, appIconIndex: 0 });
+    target.setAppDetails(taskbarDetails);
   }
 }
 app.setName("CW_Handsoff_sys");
 if (process.platform === 'win32') {
-  app.setAppUserModelId(NOTIFICATION_APP_ID);
+  app.setAppUserModelId(windowsAppId(app.isPackaged));
   app.setToastActivatorCLSID(NOTIFICATION_CLSID);
 }
 // Preserve the original install's sign-ins and projects when the product name changes.
@@ -586,6 +588,17 @@ else {
   });
   app.whenReady().then(async () => {
     try {
+      if (process.platform === 'win32') {
+        try { windowIcon = await cacheWindowsIcon(windowIcon, app.getPath('userData')); }
+        catch (error) { await recordStartupFailure('taskbar-icon', error, 1); }
+        const executable = app.isPackaged ? process.env.PORTABLE_EXECUTABLE_FILE || process.execPath : process.execPath;
+        taskbarDetails = windowsTaskbarDetails({ packaged: app.isPackaged, executable, appPath: app.getAppPath(), iconPath: windowIcon, profileDirectory });
+        // Isolated verification profiles must not change the user's Start Menu.
+        if (app.isPackaged && !profileDirectory) {
+          try { await registerNotificationShortcut(app, shell, taskbarDetails); }
+          catch (error) { await recordStartupFailure('taskbar-shortcut', error, 1); }
+        }
+      }
       await createSplash();
       if(shuttingDown)return;
       store = new Store(app.getPath("userData"), safeStorage);
@@ -737,7 +750,7 @@ else {
       handle('tower:refresh-model-catalog',()=>refreshCatalog(null,true));
       const inbox = new NotificationInbox(store);
       inputNotifications = new InputNotifications({ Notification,
-        register: () => registerNotificationShortcut(app, shell),
+        register: () => registerNotificationShortcut(app, shell, taskbarDetails),
         persist: value => inbox.add(value),
         activate: scope => {
           if (!window || window.isDestroyed()) return;

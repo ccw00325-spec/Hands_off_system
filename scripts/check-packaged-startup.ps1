@@ -18,6 +18,33 @@ using System.Runtime.InteropServices;
 public static class HandsOffWindowIcon {
   [DllImport("user32.dll", EntryPoint="SendMessageW")]
   public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+  [DllImport("shell32.dll")]
+  private static extern int SHGetPropertyStoreForWindow(IntPtr window, ref Guid iid, out IPropertyStore store);
+  [DllImport("ole32.dll")]
+  private static extern int PropVariantClear(ref PropVariant value);
+  [StructLayout(LayoutKind.Sequential)]
+  private struct PropertyKey { public Guid format; public uint id; }
+  [StructLayout(LayoutKind.Explicit, Size=24)]
+  private struct PropVariant { [FieldOffset(0)] public ushort type; [FieldOffset(8)] public IntPtr pointer; }
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  private interface IPropertyStore {
+    [PreserveSig] int GetCount(out uint count);
+    [PreserveSig] int GetAt(uint index, out PropertyKey key);
+    [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+    [PreserveSig] int SetValue(ref PropertyKey key, ref PropVariant value);
+    [PreserveSig] int Commit();
+  }
+  public static string TaskbarProperty(IntPtr window, uint id) {
+    Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+    IPropertyStore store;
+    Marshal.ThrowExceptionForHR(SHGetPropertyStoreForWindow(window, ref iid, out store));
+    var key = new PropertyKey { format = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), id = id };
+    PropVariant value = new PropVariant();
+    try {
+      Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value));
+      return value.type == 31 ? Marshal.PtrToStringUni(value.pointer) : null;
+    } finally { PropVariantClear(ref value); Marshal.ReleaseComObject(store); }
+  }
 }
 '@
 function Compare-MascotIcon([System.Drawing.Icon]$Actual, [string]$Name) {
@@ -68,11 +95,21 @@ try {
   if ($iconHandle -eq [IntPtr]0) { throw 'The app window has no explicit Windows icon.' }
   $windowIcon = ([System.Drawing.Icon]::FromHandle($iconHandle)).Clone()
   $executableIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($portableExe)
+  $processIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($appProcess.Path)
   try {
     $report.windowIconMatchesMascot = Compare-MascotIcon $windowIcon 'taskbar-icon'
     $report.executableIconMatchesMascot = Compare-MascotIcon $executableIcon 'executable-icon'
-  } finally { $windowIcon.Dispose(); $executableIcon.Dispose() }
-  $report.passed = $report.windowIconMatchesMascot -and $report.executableIconMatchesMascot -and (-not $Portable -or $report.portablePayloadMatches) -and $report.rendererIPCInitialized -and -not $report.credentialVaultCopied -and $report.productVersion.StartsWith($version + '.')
+    $report.processIconMatchesMascot = Compare-MascotIcon $processIcon 'process-icon'
+  } finally { $windowIcon.Dispose(); $executableIcon.Dispose(); $processIcon.Dispose() }
+  $report.taskbarIdentityMatches = [HandsOffWindowIcon]::TaskbarProperty($appProcess.MainWindowHandle, 5) -eq 'dev.agent.controltower.desktop'
+  $report.taskbarDisplayNameMatches = [HandsOffWindowIcon]::TaskbarProperty($appProcess.MainWindowHandle, 4) -eq 'CW_Handsoff_sys'
+  $expectedRelaunch = '"' + $executable + '" --user-data-dir="' + $profile + '"'
+  $report.taskbarRelaunchMatches = [HandsOffWindowIcon]::TaskbarProperty($appProcess.MainWindowHandle, 2) -eq $expectedRelaunch
+  $iconResource = [HandsOffWindowIcon]::TaskbarProperty($appProcess.MainWindowHandle, 3)
+  $iconFile = if ($iconResource -match '^(.+),0$') { $Matches[1].Trim('"') } else { $null }
+  $brandingFolder = (Join-Path $profile 'branding') + [IO.Path]::DirectorySeparatorChar
+  $report.taskbarIconIsPersistent = $iconFile -and $iconFile.StartsWith($brandingFolder, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $iconFile) -and (Get-FileHash -LiteralPath $iconFile).Hash -eq (Get-FileHash -LiteralPath (Join-Path $workspace 'build/app.ico')).Hash
+  $report.passed = $report.taskbarIdentityMatches -and $report.taskbarDisplayNameMatches -and $report.taskbarRelaunchMatches -and $report.taskbarIconIsPersistent -and $report.processIconMatchesMascot -and $report.windowIconMatchesMascot -and $report.executableIconMatchesMascot -and (-not $Portable -or $report.portablePayloadMatches) -and $report.rendererIPCInitialized -and -not $report.credentialVaultCopied -and $report.productVersion.StartsWith($version + '.')
 } finally {
   try {
     if ($process -and -not $process.HasExited) {
