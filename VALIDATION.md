@@ -4,7 +4,15 @@
 - 배포·개발 실행의 Windows ID를 분리하고 창에 ID·캐릭터 아이콘·표시 이름·올바른 재실행 명령을 모두 지정했다. 아이콘은 사용자 프로필의 내용 해시 기반 경로에 보관해 포터블 임시 폴더 삭제에 의존하지 않는다. 일반 배포 실행은 현재 OS 사용자의 앱 전용 시작 메뉴 바로가기를 등록·갱신한다. 별도 검증 프로필은 시작 메뉴를 변경하지 않는다. 로그인 저장 위치·폴더 권한·Mac bundle ID·버전 **0.1.0**은 유지한다.
 - 로컬 단위·통합 **210개**를 통과했다. 캐시 수명·프로필 분리·심볼릭 링크 거부·네트워크 및 잘못된 재실행 경로 거부를 검사했다. 실제 Windows 알림 API도 별도 QA ID로 **show 이벤트**와 `silent:false`를 확인했고 테스트 바로가기는 제거했다. 물리적 소리 청취는 검증하지 않았다.
 - 기존 `release/CW_Handsoff_sys 0.1.0.exe`를 새 파일로 교체하고 빈 프로필의 실제 시작을 확인했다. 소스 **99개**·법적 고지 **2개**·보안 fuse **6개** 일치, 허용 목록 밖 파일 0개다. 실제 Windows 속성 저장소에서 ID·표시 이름·재실행 명령·고정 아이콘 경로를 읽어 모두 일치했고 창·외부 실행기·내부 프로세스의 캐릭터 이미지도 일치했다. SHA-256: `873166fc9977c0a277fe246982b2c69e0054761e881f32a9f90ba13112ed12ce`.
-- 화면 확인 도구가 초기화 과정에서 `failed to write kernel assets` 오류를 반환해 실제 사용자의 작업표시줄 화면을 전후 촬영하지는 못했다. 네이티브 속성 검사 통과를 화면에서 표시까지 직접 확인한 결과로 대신하지 않는다. 원격 플랫폼 검증은 별도로 기록한다.
+- 실행·검사 커밋 `ac8d134ebf76cab46856ea6b398b2e9d763f6247`의 [Windows·Linux CI](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42218149596)와 [Mac CI](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42218159110)가 모두 성공했다. Windows x64·Mac Apple Silicon·Mac Intel 각각 단위·통합 **210개**, 화면·시작 **67개**, 전체 의존성 감사와 실제 패키지 빌드·별도 프로필 시작을 통과했다. Windows CI도 새 작업표시줄 속성·고정 아이콘·프로세스 아이콘 검사를 모두 통과했다. 각 소스 99개·법적 고지 2개·보안 fuse 6개가 일치하며 허용 목록 밖 파일은 0개다. Linux Docker 검사도 통과했다. Mac 서명 검사는 ad-hoc 무결성 검사이며 Developer ID 서명·Apple 공증을 뜻하지 않는다.
+- 화면 확인 도구가 초기화 과정에서 `failed to write kernel assets` 오류를 반환해 실제 사용자의 작업표시줄 화면을 전후 촬영하지는 못했다. 네이티브 속성 검사 통과를 화면에서 표시까지 직접 확인한 결과로 대신하지 않는다. 사용자에게 새 파일 실행 후 실제 표시 확인을 요청했다.
+
+| 작업표시줄 보강 후 0.1.0 파일 | SHA-256 |
+| --- | --- |
+| 로컬 release Windows 포터블 | `873166fc9977c0a277fe246982b2c69e0054761e881f32a9f90ba13112ed12ce` |
+| Windows CI 포터블 | `85a3f249b9948741cec5f3952dfaf1d19488bde7857cab9b2ff9a92ad801a5a2` |
+| Mac arm64 `.zip` | `d58579ec3f8ef490abc5a1166bcdeaef427db00b5cc26b7c3cb6082b7f051c1c` |
+| Mac x64 `.zip` | `0e33a4e52bffccc961d4b9ed648f8bda6646ffbfcb02abab753ad0bf4d0fc89f` |
 
 # 이전 설치 안내 배지 배치 · 2026-11-06
 
