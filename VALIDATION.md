@@ -2,9 +2,17 @@
 
 - `GHSA-g3hv-75wg-m249`의 영향 범위 `>=7.0.0 <11.0.1`에 한정한 npm override로 빌드 도구의 `9.0.9`·`10.2.6`을 패치 버전 **11.0.1**로 교체했다. 이 자문의 영향 범위 밖인 3·5 계열의 API는 유지한다. 앱 버전은 기존 지시대로 **0.1.0**이다.
 - 잠금 파일로 재설치(`npm ci --ignore-scripts`)한 뒤 전체 의존성 감사 **취약점 0건**을 확인했다. Electron 공식 설치 스크립트로 빌드 바이너리를 준비했다. 소스 문법 검사와 단위·통합 **203개**를 통과했다. 격리 실행의 심볼릭 링크 권한 오류는 실제 Windows 권한에서 재검증해 통과했다.
-- 새 `npm run check:dependencies`는 잠금 파일과 빌드 소비자가 실제 불러오는 minimatch의 취약 버전을 검사한다. builder의 실제 `FileMatcher` 포함·제외 동작, 숨김 파일·brace 패턴 및 Mac universal의 `matchBase` 사용 방식을 실행으로 확인한다. Windows·Mac CI에 이 검사와 전체 npm 감사를 추가했다.
+- 새 `npm run check:dependencies`는 잠금 파일과 빌드 소비자가 실제 불러오는 minimatch의 취약 버전을 검사한다. builder의 실제 `FileMatcher` 포함·제외 동작, 숨김 파일·brace 패턴 및 Mac universal의 `matchBase` 사용 방식을 실행으로 확인한다. Windows·Mac CI에 이 검사와 전체 npm 감사를 추가했다. 검사 사본에 취약한 `10.2.6`을 다시 넣거나 `.env` 제외 규칙을 제거한 **2개 음성 대조군**은 모두 예상 지점에서 실패했다. 실제 잠금 파일·필터는 변경하지 않았고 임시 검사 사본은 삭제했다.
 - Windows 포터블 재빌드·별도 빈 프로필 실제 시작을 통과했다. 소스 **97개**·법적 고지 **2개**·보안 fuse **6개**가 일치하고 불일치·예상 밖 파일은 0개다. 메인 창 표시·시작 창 종료·진행률 100%·개발자 vault 미복사·실제 ASAR 일치도 확인했다. SHA-256: `22045b43d4915fb5d1d3a07f0645324eff52a18b7139826969933085306d519f`.
-- Windows Dependabot 경고 #1은 GitHub에서 **fixed**로 자동 해소된 것을 확인했다. 비활성이던 Mac 저장소의 Dependabot 경고 기능도 활성화하고 열린 경고 0건을 확인했다. 원격 Windows·Mac Intel/Apple Silicon CI는 별도로 확인한다. 이 기록은 Mac 네이티브 실행을 로컬 Windows 검사로 대신하지 않는다.
+- Windows Dependabot 경고 #1은 GitHub에서 **fixed**로 자동 해소된 것을 확인했다. 비활성이던 Mac 저장소의 Dependabot 경고 기능도 활성화했으며 양쪽 저장소의 열린 경고는 **0건**이다.
+- 실행·검사 커밋 `bb61de178cb7c476123ae889edd7e8bbb9514e53`의 [Windows·Linux CI](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42165215269)와 [Mac CI](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42165223457)가 모두 성공했다. Windows x64·Mac Apple Silicon·Mac Intel 각각 전체 npm 감사, 단위·통합 **203개**, 화면·시작 **65개**, 실제 패키지 빌드·별도 프로필 시작을 통과했다. Linux Docker 격리 검사도 통과했다. 세 패키지 모두 소스 97개·법적 고지 2개·fuse 6개가 일치하고 허용 목록 밖 파일·개발자 vault 복사는 없었다. Mac 서명 검사는 ad-hoc 무결성 검사이며 Developer ID 서명·Apple 공증을 뜻하지 않는다.
+
+| 보안 수정 후 0.1.0 파일 | SHA-256 |
+| --- | --- |
+| 로컬 Windows 포터블 | `22045b43d4915fb5d1d3a07f0645324eff52a18b7139826969933085306d519f` |
+| Windows CI 포터블 | `df26f2f00c50e52a907644febe43c8d2eb97ec2ce689a1b9b053d4b6efab2999` |
+| Mac arm64 `.zip` | `682b450ee84f2f621de454f0191b748e67be98124710b1337819065cbe97a08d` |
+| Mac x64 `.zip` | `bd93aaebf62dbfd0cca82f54c47d441f99254f1bbc34fa81bce587c2b9811105` |
 
 # 이전 배포 기준 0.1.0 유지 · 역할·순차 검토 보강 · 2026-11-06
 
