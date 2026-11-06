@@ -4,7 +4,7 @@
 - 잠금 파일로 재설치(`npm ci --ignore-scripts`)한 뒤 전체 의존성 감사 **취약점 0건**을 확인했다. Electron 공식 설치 스크립트로 빌드 바이너리를 준비했다. 소스 문법 검사와 단위·통합 **203개**를 통과했다. 격리 실행의 심볼릭 링크 권한 오류는 실제 Windows 권한에서 재검증해 통과했다.
 - 새 `npm run check:dependencies`는 잠금 파일과 빌드 소비자가 실제 불러오는 minimatch의 취약 버전을 검사한다. builder의 실제 `FileMatcher` 포함·제외 동작, 숨김 파일·brace 패턴 및 Mac universal의 `matchBase` 사용 방식을 실행으로 확인한다. Windows·Mac CI에 이 검사와 전체 npm 감사를 추가했다.
 - Windows 포터블 재빌드·별도 빈 프로필 실제 시작을 통과했다. 소스 **97개**·법적 고지 **2개**·보안 fuse **6개**가 일치하고 불일치·예상 밖 파일은 0개다. 메인 창 표시·시작 창 종료·진행률 100%·개발자 vault 미복사·실제 ASAR 일치도 확인했다. SHA-256: `22045b43d4915fb5d1d3a07f0645324eff52a18b7139826969933085306d519f`.
-- 원격 반영 후 Windows·Mac Intel/Apple Silicon CI 및 Windows Dependabot 경고 해소 여부를 추가 확인한다. Mac 저장소의 Dependabot 경고 기능은 조회 당시 비활성 상태였다. 이 기록은 Mac 네이티브 실행을 로컬 Windows 검사로 대신하지 않는다.
+- Windows Dependabot 경고 #1은 GitHub에서 **fixed**로 자동 해소된 것을 확인했다. 비활성이던 Mac 저장소의 Dependabot 경고 기능도 활성화하고 열린 경고 0건을 확인했다. 원격 Windows·Mac Intel/Apple Silicon CI는 별도로 확인한다. 이 기록은 Mac 네이티브 실행을 로컬 Windows 검사로 대신하지 않는다.
 
 # 이전 배포 기준 0.1.0 유지 · 역할·순차 검토 보강 · 2026-11-06
 

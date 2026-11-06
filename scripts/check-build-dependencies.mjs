@@ -37,7 +37,8 @@ const matcher = new FileMatcher(root, root, value => value, [
 const filter = matcher.createFilter();
 for (const [file, expected] of [
   ['src/main.js', true], ['src/core/task.cjs', true],
-  ['src/private/token.js', false], ['src/.env.local', false],
+  ['src/.cache/task.cjs', true], ['src/private/token.js', false],
+  ['src/.env.js', false], ['src/.env.local', false],
   ['src/notes.txt', false], ['.runtime/auth.json', false],
 ]) {
   assert.equal(filter(resolve(root, file), { isDirectory: () => false }), expected, file);
