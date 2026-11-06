@@ -3,11 +3,11 @@
 - 필수·선택 표시는 설치 상태 칸에서 빼고 각 공식 안내·설치 안내 버튼 바로 위에 배치했다. 글자 10px, 작은 여백과 우측 정렬을 적용했다. 도구 판정·설치 링크·설명은 유지하고 버전은 **0.1.0**이다.
 - 실제 Electron 설치 안내의 기존 **4개 시나리오**를 통과했다. 배지 크기·버튼 위 배치는 실제 화면과 좌표로 확인했다. 공식 링크 허용 목록·재검사·실행 동의도 함께 확인했다. README 설명과 설치 화면을 갱신했다.
 - 실행·검사 커밋 `cf60c0f017f0b403f8a20145e6e697879a9bb0ec`의 [Windows·Linux CI](https://github.com/ccw00325-spec/Hands_off_system_window/actions/runs/42207150878)와 [Mac CI](https://github.com/ccw00325-spec/Hands_off_system_mac/actions/runs/42207160707)가 모두 성공했다. Windows x64·Mac Apple Silicon·Mac Intel 각각 단위·통합 **206개**, 화면·시작 **67개**, 전체 의존성 감사, 실제 패키지 빌드·별도 프로필 시작을 통과했다. 소스 **98개**·법적 고지 **2개**·보안 fuse **6개**가 일치하며 허용 목록 밖 파일은 0개다. Linux Docker 검사도 통과했다. Mac 서명 검사는 ad-hoc 무결성 검사이며 Developer ID 서명·공증을 뜻하지 않는다.
-- 로컬 새 포터블 `artifacts/badge-release/CW_Handsoff_sys 0.1.0.exe`의 실제 시작·캐릭터 아이콘·ASAR 일치·개발자 vault 미복사도 통과했다. 기존 `release` 실행 파일은 사용자 앱이 실행 중이라 교체를 보류했다. 실행 중인 사용자 앱은 종료하지 않았다.
+- 사용자가 앱을 종료한 뒤 검증된 새 포터블과 unpacked 패키지를 기존 `release` 경로에 교체했다. `release/CW_Handsoff_sys 0.1.0.exe`의 복사본 해시·소스·법적 고지·보안 fuse 일치를 확인하고, 기존 경로에서 별도 프로필의 실제 시작·캐릭터 창/실행 파일 아이콘·ASAR 일치·개발자 vault 미복사를 다시 확인했다. 메인 창 표시·시작 창 종료·진행률 100%가 정상이며 이전 실행 파일 정리의 차단 항목은 없다.
 
 | 배지 배치 수정 후 0.1.0 파일 | SHA-256 |
 | --- | --- |
-| 로컬 검증 폴더 Windows 포터블 | `d1685e9cb5ca739c9ec995f63db10fb0c4225b83d8ece33719d8562fc2f3f715` |
+| 로컬 release Windows 포터블 | `d1685e9cb5ca739c9ec995f63db10fb0c4225b83d8ece33719d8562fc2f3f715` |
 | Windows CI 포터블 | `ba79112c2da9dc213d7ae6b3a562e593c99d2aaeaa859bbd57c2eb1f29738a84` |
 | Mac arm64 `.zip` | `a82201a5f7dbfc84d8bdd87603aa43b49838037e7dedc8d39c3b8e217c2295ab` |
 | Mac x64 `.zip` | `81bddf41a383d7d21b60ca5d2296560733afcfc7ce6be1b76ef1d7270d9c9bfa` |
