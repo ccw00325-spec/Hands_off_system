@@ -9,29 +9,36 @@ const env={...process.env,TOWER_TEST_USER_DATA:profile};delete env.ELECTRON_RUN_
 const checks=[];let application;
 try{
  application=await electron.launch({args:['.'],cwd:resolve('.'),env});
- await application.evaluate(({dialog},url)=>{
-  const path=process.getBuiltinModule('url').fileURLToPath(url),require=process.getBuiltinModule('module').createRequire(path);
+ await application.evaluate(({dialog},data)=>{
+  const path=process.getBuiltinModule('url').fileURLToPath(data.url),require=process.getBuiltinModule('module').createRequire(path);
   globalThis.__toolsReady=false;globalThis.__sites=[];globalThis.__hostApproved=false;
-  require(path).Prerequisites.prototype.scan=async function(){
+  const Prerequisites=require(path).Prerequisites, scan=Prerequisites.prototype.scan;
+  Prerequisites.prototype.scan=async function(){
    const ready=globalThis.__toolsReady;
-   return this.current={platform:process.platform,arch:process.arch,needsAttention:!ready,rows:[
-    {id:'node',label:'Node.js 24+ · npm',required:true,state:ready?'ready':'outdated',version:ready?'24.0.0':'22.0.0',purpose:'프로젝트 테스트·빌드'},
-    {id:'git',label:'Git',required:true,state:ready?'ready':'missing',purpose:'GitHub 커밋·푸시'},
-    {id:'gpt',label:'Codex CLI',required:true,state:ready?'ready':'missing',purpose:'선택한 AI'},
-    {id:'gemini',label:'Gemini CLI',required:false,state:'missing',purpose:'선택 사항 · 이 AI를 사용할 때 설치'},
-   ]};
+   const fixture=new Prerequisites({node:async()=>data.nodePath,find:async name=>ready?'/fixture/'+name:null,
+    probe:async(executable,args)=>({code:0,output:args[0]==='--version'?(executable.endsWith('git')?'git version 2.48.0':ready?'v24.0.0':'v22.0.0'):'28.0.0'})});
+   return this.current=await scan.call(fixture,{gpt:{installed:ready}},{providers:['gpt'],executionBackend:'docker'});
   };
   const Browser=require(path.replace('prerequisites.js','browser.js')).BrowserOpener,open=Browser.prototype.open;
   Browser.prototype.open=async function(url){this.openDefault=async safe=>{globalThis.__sites.push(safe);return true;};return open.call(this,url);};
   for(const [file,name]of[['codex','CodexConnection'],['claude','ClaudeConnection'],['cursor','CursorConnection'],['gemini','GeminiConnection']])require(path.replace('prerequisites.js',file+'.js'))[name].prototype.status=async()=>({installed:false,connected:false,login:{waiting:false}});
   const show=dialog.showMessageBox;dialog.showMessageBox=(...args)=>args.at(-1)?.title==='현재 PC에서 실행'?Promise.resolve({response:globalThis.__hostApproved?1:0}):show(...args);
- },pathToFileURL(resolve('src/core/prerequisites.js')).href);
+ },{url:pathToFileURL(resolve('src/core/prerequisites.js')).href,nodePath:process.execPath});
  const page=await workspaceWindow(application);page.setDefaultTimeout(30000);
  await page.locator('#prerequisites-dialog[open]').waitFor();
  await page.waitForFunction(()=>window.tower.startupState().then(r=>r.value.mainVisible));
  assert.equal(await page.locator('#first-run-tour').evaluate(el=>el.open),false);
  assert.match(await page.locator('[data-tool=node]').innerText(),/24 이상으로 업데이트/);
  assert.match(await page.locator('[data-tool=gemini]').innerText(),/선택/);
+  assert.equal(await page.locator('[data-tool=node] .prerequisite-badge').innerText(),'필수');
+  assert.equal(await page.locator('[data-tool=gemini] .prerequisite-badge').innerText(),'선택');
+  assert.equal(await page.locator('[data-tool=node] .prerequisite-badge').getAttribute('data-required'),'true');
+  assert.equal(await page.locator('[data-tool=gemini] .prerequisite-badge').getAttribute('data-required'),'false');
+  assert.ok(await page.locator('[data-tool=node] small').innerText());
+ assert.equal(await page.locator('[data-tool=git] .prerequisite-badge').innerText(),'선택');
+ assert.equal(await page.locator('[data-tool=docker] .prerequisite-badge').innerText(),'필수');
+ assert.match(await page.locator('[data-tool=docker] small').innerText(),/현재 Docker.*필수/);
+ assert.match(await page.locator('[data-tool=git] small').innerText(),/GitHub.*백업/);
  await page.screenshot({path:join(artifacts,'prerequisites-ui.png')});
  checks.push('Fresh startup finishes the splash and opens a missing/outdated tools dialog before the first-run tour; unused Gemini remains optional');
  await page.locator('[data-tool=node] button').click();

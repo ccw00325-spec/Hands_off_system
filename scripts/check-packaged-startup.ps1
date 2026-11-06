@@ -11,6 +11,32 @@ $profile = Join-Path $workspace ('artifacts/packaged-profile-' + [guid]::NewGuid
 $report = [ordered]@{ passed = $false; rendererIPCInitialized = $false; productVersion = (Get-Item -LiteralPath $unpackedExe).VersionInfo.ProductVersion; isolatedProfile = $true; credentialVaultCopied = $false; portableSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $portableExe).Hash.ToLowerInvariant() }
 $process = $null
 $null = New-Item -ItemType Directory -Path $profile
+Add-Type -AssemblyName System.Drawing
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class HandsOffWindowIcon {
+  [DllImport("user32.dll", EntryPoint="SendMessageW")]
+  public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+}
+'@
+function Compare-MascotIcon([System.Drawing.Icon]$Actual, [string]$Name) {
+  $expected = [System.Drawing.Icon]::new((Join-Path $workspace 'build/app.ico'), $Actual.Width, $Actual.Height)
+  $actualBitmap = $Actual.ToBitmap()
+  $expectedBitmap = $expected.ToBitmap()
+  try {
+    if ($actualBitmap.Width -ne $expectedBitmap.Width -or $actualBitmap.Height -ne $expectedBitmap.Height) { return $false }
+    [double]$difference = 0
+    for ($y = 0; $y -lt $actualBitmap.Height; $y++) {
+      for ($x = 0; $x -lt $actualBitmap.Width; $x++) {
+        $a = $actualBitmap.GetPixel($x, $y); $b = $expectedBitmap.GetPixel($x, $y)
+        $difference += [Math]::Abs([int]$a.R - [int]$b.R) + [Math]::Abs([int]$a.G - [int]$b.G) + [Math]::Abs([int]$a.B - [int]$b.B) + [Math]::Abs([int]$a.A - [int]$b.A)
+      }
+    }
+    $actualBitmap.Save((Join-Path $workspace "artifacts/$Name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+    return $difference / ($actualBitmap.Width * $actualBitmap.Height * 4) -lt 8
+  } finally { $actualBitmap.Dispose(); $expectedBitmap.Dispose(); $expected.Dispose() }
+}
 try {
   $portableTemp = Join-Path $profile 'portable-temp'
   $null = New-Item -ItemType Directory -Path $portableTemp
@@ -34,7 +60,19 @@ try {
     $payload = Get-ChildItem -LiteralPath $portableTemp -Filter 'app.asar' -Recurse -File | Select-Object -First 1
     $report.portablePayloadMatches = $null -ne $payload -and (Get-FileHash -LiteralPath $payload.FullName).Hash -eq $expected
   }
-  $report.passed = (-not $Portable -or $report.portablePayloadMatches) -and $report.rendererIPCInitialized -and -not $report.credentialVaultCopied -and $report.productVersion.StartsWith($version + '.')
+  $appProcess = Get-Process | Where-Object {
+    try { $_.MainWindowHandle -ne 0 -and ($_.Path -eq $unpackedExe -or $_.Path.StartsWith($portableTemp + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) } catch { $false }
+  } | Select-Object -First 1
+  if (-not $appProcess) { throw 'Cannot find the isolated app window for icon verification.' }
+  $iconHandle = [HandsOffWindowIcon]::SendMessage($appProcess.MainWindowHandle, 0x007F, [IntPtr]1, [IntPtr]0)
+  if ($iconHandle -eq [IntPtr]0) { throw 'The app window has no explicit Windows icon.' }
+  $windowIcon = ([System.Drawing.Icon]::FromHandle($iconHandle)).Clone()
+  $executableIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($portableExe)
+  try {
+    $report.windowIconMatchesMascot = Compare-MascotIcon $windowIcon 'taskbar-icon'
+    $report.executableIconMatchesMascot = Compare-MascotIcon $executableIcon 'executable-icon'
+  } finally { $windowIcon.Dispose(); $executableIcon.Dispose() }
+  $report.passed = $report.windowIconMatchesMascot -and $report.executableIconMatchesMascot -and (-not $Portable -or $report.portablePayloadMatches) -and $report.rendererIPCInitialized -and -not $report.credentialVaultCopied -and $report.productVersion.StartsWith($version + '.')
 } finally {
   try {
     if ($process -and -not $process.HasExited) {

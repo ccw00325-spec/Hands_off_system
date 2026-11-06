@@ -104,6 +104,12 @@ test('missing optional AI CLIs do not require installing all providers', async (
   const result = await check.scan({gpt:{installed:true}}, {providers:['gpt'],executionBackend:'host'});
   assert.equal(result.rows.find(row=>row.id==='claude').required,false);
   assert.equal(result.rows.find(row=>row.id==='node').state,'missing');
+  assert.equal(result.rows.find(row=>row.id==='git').required,false);
+  assert.equal(result.rows.find(row=>row.id==='docker').required,false);
+  assert.match(result.rows.find(row=>row.id==='git').purpose,/GitHub.*백업/);
+  const isolated = await check.scan({gpt:{installed:true}}, {providers:['gpt'],executionBackend:'docker'});
+  assert.equal(isolated.rows.find(row=>row.id==='docker').required,true);
+  assert.match(isolated.rows.find(row=>row.id==='docker').purpose,/현재 Docker.*필수/);
   assert.ok(Object.values(INSTALL_SITES).every(url=>new URL(url).protocol==='https:'));
   for(const url of Object.values(INSTALL_SITES))assert.equal(officialExternalURL(url),url);
   assert.throws(()=>officialExternalURL('https://nodejs.org.attacker.example/download'));

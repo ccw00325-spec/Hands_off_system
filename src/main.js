@@ -44,6 +44,15 @@ import { CallQuota } from './core/call-quota.js';
 import { InputNotifications, registerNotificationShortcut, NOTIFICATION_APP_ID, NOTIFICATION_CLSID } from './core/input-notifications.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
+const windowIcon = process.platform === 'win32'
+  ? (app.isPackaged ? join(process.resourcesPath, 'app.ico') : join(directory, '../build/app.ico'))
+  : join(directory, 'renderer/assets/mascot.png');
+function applyTaskbarIcon(target) {
+  if (process.platform === 'win32') {
+    target.setIcon(windowIcon);
+    target.setAppDetails({ appId: NOTIFICATION_APP_ID, appIconPath: windowIcon, appIconIndex: 0 });
+  }
+}
 app.setName("CW_Handsoff_sys");
 if (process.platform === 'win32') {
   app.setAppUserModelId(NOTIFICATION_APP_ID);
@@ -144,7 +153,7 @@ async function createSplash() {
     title: "Hands off 시작 준비",
     backgroundColor: "#ffffff",
     autoHideMenuBar: true,
-    icon: join(directory, "renderer/assets/mascot.png"),
+    icon: windowIcon,
     webPreferences: {
       preload: join(directory, "startup-preload.cjs"),
       contextIsolation: true,
@@ -155,6 +164,7 @@ async function createSplash() {
       webviewTag: false,
     },
   });
+  applyTaskbarIcon(splash);
   splash.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   for (const event of ["will-navigate", "will-frame-navigate", "will-redirect"])
     splash.webContents.on(event, (event) => event.preventDefault());
@@ -1169,7 +1179,7 @@ else {
         minWidth: 900,
         minHeight: 700,
         title: "CW_Handsoff_sys",
-        icon: join(directory, "renderer/assets/mascot.png"),
+        icon: windowIcon,
         backgroundColor: "#0b0d0f",
         autoHideMenuBar: true,
         show: false,
@@ -1183,6 +1193,7 @@ else {
           webviewTag: false,
         },
       });
+      applyTaskbarIcon(window);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       for (const navigation of ["will-navigate", "will-frame-navigate", "will-redirect"])
         window.webContents.on(navigation, (event) => event.preventDefault());

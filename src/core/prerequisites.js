@@ -44,10 +44,15 @@ export class Prerequisites {
     if (node) for (const suffix of ['node_modules/npm/bin/npm-cli.js', '../lib/node_modules/npm/bin/npm-cli.js', '../share/nodejs/npm/bin/npm-cli.js'])
       if (await access(join(dirname(node), suffix)).then(() => true, () => false)) { npm = true; break; }
     const rows = [
-      { id: 'node', label: 'Node.js 24+ · npm', state: !node ? 'missing' : !nodeVersion ? 'unknown' : Number(nodeVersion.split('.')[0]) < 24 ? 'outdated' : !npm ? 'npm-missing' : 'ready', version: nodeVersion, required: true, purpose: '프로젝트 테스트·빌드와 일부 AI CLI' },
-      { id: 'git', label: 'Git', state: !git || gitStub ? 'missing' : version(gitInfo) ? 'ready' : 'unknown', version: version(gitInfo), required: true, purpose: 'GitHub 커밋·푸시' },
-      { id: 'docker', label: 'Docker', state: !docker ? 'missing' : dockerInfo?.code !== 0 ? 'not-running' : imageReady ? 'ready' : 'image-missing', version: version(dockerInfo), required: executionBackend === 'docker', purpose: '프로젝트 테스트·빌드 격리 실행 · 로컬 이미지 ' + dockerImage },
-      ...Object.entries({ gpt: 'GPT · Codex CLI', claude: 'Claude Code', grok: 'Cursor Agent CLI', gemini: 'Gemini CLI' }).map(([id, label]) => ({ id, label, state: status?.[id]?.installed ? 'ready' : 'missing', required: providers.includes(id), purpose: providers.includes(id) ? '현재 팀에 배정한 AI' : '선택 사항 · 이 AI를 사용할 때 설치', version: null })),
+      { id: 'node', label: 'Node.js 24+ · npm', state: !node ? 'missing' : !nodeVersion ? 'unknown' : Number(nodeVersion.split('.')[0]) < 24 ? 'outdated' : !npm ? 'npm-missing' : 'ready', version: nodeVersion, required: true, purpose: 'JavaScript 앱 실행, 라이브러리 설치, 테스트·빌드와 일부 AI CLI를 구동합니다. 화면 둘러보기는 설치 전에도 가능합니다.' },
+      { id: 'git', label: 'Git · GitHub 전송 기반', state: !git || gitStub ? 'missing' : version(gitInfo) ? 'ready' : 'unknown', version: version(gitInfo), required: false, purpose: '코드 변경 이력을 커밋으로 남기고 GitHub에 올려 백업·공유할 때 사용합니다. Git은 로컬 도구이며 GitHub 계정 연결은 왼쪽 ‘보조 서비스 연결’에서 별도로 진행합니다. 로컬 작업만 할 때는 선택입니다.' },
+      { id: 'docker', label: 'Docker · 격리 실행', state: !docker ? 'missing' : dockerInfo?.code !== 0 ? 'not-running' : imageReady ? 'ready' : 'image-missing', version: version(dockerInfo), required: executionBackend === 'docker', purpose: `프로젝트 테스트·빌드를 PC와 분리해 실행합니다. ${executionBackend === 'docker' ? '현재 Docker 실행을 선택했으므로 검증에 필수입니다.' : '현재 PC 직접 실행을 선택했으므로 선택입니다.'} 앱 둘러보기·요구사항 설계에는 없어도 됩니다. 엔진과 로컬 이미지 ${dockerImage}가 필요하며, 없을 때 PC 직접 실행으로 자동 전환하지 않습니다.` },
+      ...Object.entries({ gpt: 'GPT · Codex CLI', claude: 'Claude Code', grok: 'Cursor Agent CLI', gemini: 'Gemini CLI' }).map(([id, label]) => ({ id, label, state: status?.[id]?.installed ? 'ready' : 'missing', required: providers.includes(id), purpose: ({
+        gpt: 'ChatGPT 계정으로 GPT 작업·대화와 코드 작성을 실행합니다. GPT를 API로 연결할 때는 이 CLI가 없어도 됩니다.',
+        claude: 'Claude 계정으로 코드 작성·UI 구현·검토 등 배정한 역할을 실행합니다.',
+        grok: 'Cursor 계정과 선택한 모델로 코드 작성·디버깅·검토를 실행합니다. Grok 모델도 Cursor가 제공하는 목록에서 선택합니다.',
+        gemini: 'Gemini 계정으로 설계·코드 작성·검토 등 배정한 역할을 실행합니다. 이미지 API 연결과는 별개입니다.',
+      })[id] + (providers.includes(id) ? ' 현재 팀에서 사용하므로 설치가 필요합니다.' : ' 현재 팀에서 사용하지 않으므로 선택입니다.'), version: null })),
     ];
     this.current = { checkedAt: new Date().toISOString(), platform: process.platform, arch: process.arch, rows, needsAttention: rows.some(row => row.required && row.state !== 'ready') };
     return structuredClone(this.current);

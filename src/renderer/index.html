@@ -1112,6 +1112,7 @@
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" popover="manual" hidden=""></div>
+    <div id="request-alerts" popover="manual" aria-label="작업 시작 안내"></div>
     <section id="notification-popover" popover="auto" role="dialog" aria-labelledby="notification-title">
       <header><h2 id="notification-title">알림</h2><button id="close-notifications" type="button" aria-label="알림 닫기">×</button></header>
       <div id="notification-items"></div>
@@ -1348,7 +1349,7 @@
 
     <dialog id="prerequisites-dialog" aria-labelledby="prerequisites-title">
       <header class="dialog-heading"><div><p class="eyebrow">FIRST-RUN TOOL CHECK</p><h2 id="prerequisites-title">작업 전에 공구함을 확인해요</h2><p id="prerequisites-status" class="hint"></p></div><button id="close-prerequisites" type="button" class="icon-button" aria-label="설치 안내 닫기">×</button></header>
-      <p>앱 화면은 바로 사용할 수 있어요. 빠진 도구는 필요한 기능을 실행하기 전에 설치해 주세요. AI CLI는 사용할 AI만 설치하면 됩니다.</p>
+      <p>앱 화면은 설치 전에도 둘러볼 수 있어요. <strong>필수</strong>는 현재 선택한 AI·실행 방식에 필요한 도구이고, <strong>선택</strong>은 해당 기능을 쓸 때만 준비하면 됩니다. 로그인 여부는 ‘계정 · 연결’에서 확인하세요.</p>
       <div id="prerequisites-list" class="prerequisites-list"></div>
       <p class="permission-note">설치 버튼은 공식 안내를 기본 브라우저에서 엽니다. 설치 파일이나 원격 스크립트를 자동 실행하지 않습니다. Docker 실행에는 엔진과 로컬 이미지 준비도 필요합니다.</p>
       <p class="hint">기본 격리 이미지는 Docker를 실행한 뒤 터미널에서 <code>docker pull node:24-bookworm-slim</code>으로 준비합니다. 의존성이 필요한 프로젝트는 준비한 별도 이미지를 설정에서 지정하세요.</p>

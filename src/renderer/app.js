@@ -9,6 +9,7 @@ import { createMascot } from "./mascot.js";
 import { createMission } from "./mission-view.js";
 import { createAgentDesk } from "./agent-desk.js";
 import { createNotifications } from "./notification-view.js";
+import { requestIssues, createRequestAlerts } from './request-readiness.js';
 import { displayedTeam } from "./desk-state.js";
 import {createGuide} from './guide.js';
 import { createClarifications } from './clarification-view.js';
@@ -908,37 +909,11 @@ function updateReadiness() {
   const question = mode.value === "question";
   $("#mutation-option").disabled = question;
   $('#fun-option').disabled = question || funSaving;
-  const needed = [];
-  if (!linkedFolder) needed.push("프로젝트 폴더 연결");
-  if (!teamConfig || roleSaving) needed.push("역할 배치 확인");
-  const participants = question
-    ? (teamConfig ?? []).slice(0, 1)
-    : (teamConfig ?? []);
-  for (const agent of participants) {
-    const provider = agent.provider;
-    if (provider === "gpt") {
-      if (!connection?.gpt.connected) needed.push("GPT 로그인");
-      if (
-        connection?.gpt.source === "api" &&
-        !agent.modelId &&
-        !$("#gpt-model").value
-      )
-        needed.push("GPT 모델 선택");
-    } else {
-      if (!connection?.[provider]?.connected)
-        needed.push(AI_NAMES[provider] + " 로그인");
-      if (
-        ["grok", "gemini"].includes(provider) &&
-        !agent.modelId &&
-        !connection?.[provider]?.modelId
-      )
-        needed.push(AI_NAMES[provider] + " 모델 선택");
-    }
-  }
+  const needed = controllerIssues().filter(issue => issue.action !== 'input').map(issue => issue.label);
   const pending = pendingChats.get("gpt") === currentConversation?.id;
   $("#stop-controller-chat").hidden = !pending;
-  $("#start-workflow").disabled =
-    needed.length > 0 || pending || funSaving || !$("#planner-input").value.trim();
+  $("#start-workflow").disabled = pending || funSaving;
+  $('#start-workflow').title = needed.length ? '누르면 먼저 필요한 설정을 안내합니다.' : '';
   const request = $("#planner-input").value.trim();
   const reviewingDesign = currentRun?.status === "awaiting_design";
   $("#start-workflow").textContent = reviewingDesign && /^이대로\s*적용[.!]?$/.test(request) ? "시안 승인 ↑"
@@ -1198,8 +1173,20 @@ $("#show-files").addEventListener("click", () =>
   }),
 );
 $("#close-files").addEventListener("click", () => $("#files-dialog").close());
-$("#start-workflow").addEventListener("click", () =>
-  busy($("#start-workflow"), "전송 중…", async () => {
+function controllerIssues() {
+  return requestIssues({ folder: linkedFolder, team: teamConfig, roleSaving, connection,
+    gptModel: $('#gpt-model').value, question: $('#controller-mode').value === 'question', text: $('#planner-input').value });
+}
+const showRequestAlerts = createRequestAlerts(issue => {
+  if (issue.action === 'roles') void openRoles(issue.agentId).then(() => document.querySelector(`#panel-model-${issue.agentId ?? 'gpt'}`)?.focus());
+  else if (issue.action === 'connections') openConnections();
+  else if (issue.action === 'folder') $('#choose-folder').click();
+  else $('#planner-input').focus();
+});
+$("#start-workflow").addEventListener("click", () => {
+  const issues = controllerIssues();
+  if (issues.length) { showRequestAlerts(issues); return; }
+  return busy($("#start-workflow"), "전송 중…", async () => {
     const projectId = projectData.activeId;
     if (!currentConversation) await loadConversation();
     const conversationId = currentConversation.id;
@@ -1230,8 +1217,8 @@ $("#start-workflow").addEventListener("click", () =>
     }
     await loadConversation(conversationId);
     if (currentRun?.status === "awaiting_design" && /마음에\s*안|다시\s*만들|시안\s*수정/.test(message)) openDesign();
-  }),
-);
+  });
+});
 $('#fun-option').addEventListener('change', async () => {
   const control = $('#fun-option'), desired = control.checked;
   funSaving = true;
@@ -2490,9 +2477,11 @@ function showPrerequisites(report) {
   const labels = { ready: '준비됨', missing: '설치 필요', outdated: '24 이상으로 업데이트', unknown: '실행 확인 필요', 'npm-missing': 'npm 설치 확인 필요', 'not-running': 'Docker 엔진 시작 필요', 'image-missing':'격리 이미지 준비 필요' };
   for (const row of report.rows) {
     const item = document.createElement('div'); item.className = 'prerequisite-row'; item.dataset.tool = row.id;
-    const title = document.createElement('div'); title.textContent = row.label + (row.required ? '' : ' · 선택');
+    const title = document.createElement('div'); title.textContent = row.label;
     const purpose = document.createElement('small'); purpose.textContent = row.purpose; title.append(purpose);
-    const state = document.createElement('span'); state.className = 'prerequisite-state'; state.dataset.ready = String(row.state === 'ready'); state.textContent = labels[row.state] + (row.version ? ` · ${row.version}` : '');
+    const state = document.createElement('div'); state.className = 'prerequisite-state'; state.dataset.ready = String(row.state === 'ready');
+    const badge = document.createElement('span'); badge.className = 'prerequisite-badge'; badge.dataset.required = String(row.required); badge.textContent = row.required ? '필수' : '선택';
+    const stateText = document.createElement('span'); stateText.textContent = (labels[row.state] ?? '확인 필요') + (row.version ? ` · ${row.version}` : ''); state.append(badge, stateText);
     const button = document.createElement('button'); button.type = 'button'; button.textContent = row.state === 'ready' ? '공식 안내' : '설치 안내 열기';
     button.addEventListener('click', () => busy(button, '여는 중…', () => call(api.openInstallSite(row.id))));
     item.append(title, state, button); list.append(item);

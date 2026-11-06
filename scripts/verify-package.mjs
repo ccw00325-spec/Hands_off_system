@@ -29,6 +29,7 @@ async function files(directory) {
 }
 const sources = await files("src"),
   mismatches = [];
+if (!mac && !(await readFile('build/app.ico')).equals(await readFile(join(output, 'win-unpacked', 'resources', 'app.ico')))) mismatches.push('Windows taskbar icon');
 for (const path of sources) {
   const native = await readFile(path),
     packed = asar.extractFile(archive, path);

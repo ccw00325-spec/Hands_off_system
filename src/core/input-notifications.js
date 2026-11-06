@@ -17,6 +17,7 @@ export async function registerNotificationShortcut(app, shell) {
       throw new Error('다른 바로가기를 덮어쓰지 않도록 알림 등록을 중단했습니다.');
   }
   const details = { target, cwd: dirname(target), description: 'Hands off 사용자 답변 알림',
+    icon: app.isPackaged ? target : join(app.getAppPath(), 'build', 'app.ico'), iconIndex: 0,
     appUserModelId: NOTIFICATION_APP_ID, toastActivatorClsid: NOTIFICATION_CLSID,
     ...(!app.isPackaged ? { args: `"${app.getAppPath()}"` } : {}) };
   if (!shell.writeShortcutLink(shortcut, existing ? 'update' : 'create', details))

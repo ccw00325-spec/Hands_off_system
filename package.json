@@ -62,7 +62,8 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "build/app.ico"
+      "icon": "build/app.ico",
+      "extraResources": [{ "from": "build/app.ico", "to": "app.ico" }]
     },
     "mac": {
       "target": [
