@@ -14,6 +14,7 @@ import { roleProviders } from "../src/core/roles.js";
 import { validateProject } from "../src/core/validation.js";
 import { quotaWindows } from "../src/core/quota-view.js";
 import { AgentChat } from "../src/core/agent-chat.js";
+import { pathToFileURL } from 'node:url';
 async function fixture(t) {
   const base = await mkdtemp(join(tmpdir(), "cw-qa-"));
   t.after(() =>
@@ -452,6 +453,29 @@ test("worker questions preserve panel/conversation history and never bind unrela
     (await conversations.read(f.id, two.id)).messages[1].content,
     "Read-only answer",
   );
+});
+
+test('review repairs rerun passing tests unchanged without another test-authoring call', async t => {
+  const f=await fixture(t), builds=[], validations=[];
+  const expectedTest="require('node:test')('T1 counter value',()=>require('node:assert/strict').equal(require('../counter.cjs').value,2));";
+  let implementationCalls=0, reviews=0;
+  const provider={ready:async()=>true,plan:async()=>{
+    const contract=plan(); contract.requirements[0].acceptanceCriteria.push('The exported counter is immutable'); return contract;
+  },build:async({task})=>{
+    builds.push(task.id);
+    return{summary:'Fixture result',files:task.kind==='test'?[{path:'tests/counter.test.cjs',content:expectedTest}]:
+      [{path:'counter.cjs',content:++implementationCalls===1?'module.exports={value:2};':'module.exports=Object.freeze({value:2});'}]};
+  },review:async()=>({summary:'Check immutable export',issues:++reviews===1?[{taskId:'impl',owner:'grok',file:'counter.cjs',description:'Freeze the exported counter without changing its value or interface.'}]:[]})};
+  const engine=new Workflow(f.workspace,roleProviders({gpt:provider}),()=>{},async context=>{
+    const result=await validateProject(f.workspace,context);validations.push(result);return result;
+  });
+  await engine.start(f.id,{request:'Immutable counter',team,funContract:true,maxRepairRounds:1,allowExecution:true,executionBackend:'host'});
+  await engine.runs.get(f.id).promise;
+  assert.equal((await engine.current(f.id)).status,'completed');
+  assert.deepEqual(builds,['impl','qa','impl']);
+  assert.equal(validations.length,2);assert.ok(validations.every(result=>result.passed&&result.cases[0].status==='passed'));
+  assert.equal(await readFile(join(f.root,'tests/counter.test.cjs'),'utf8'),expectedTest);
+  assert.ok(Object.isFrozen((await import(pathToFileURL(join(f.root,'counter.cjs')).href)).default));
 });
 
 test("Fun and mutation repair rerun only the assigned test task before completion", async (t) => {

@@ -398,6 +398,7 @@ async function checkAutomaticPool({ application, page, projectId, checks }) {
     projectId,
     "Automatic pool and denied Cursor UI fixture",
     "needs_attention",
+    state => /승인하지/.test(state.events.at(-1)?.message ?? ''),
   );
   assert.equal(run.options.runtimeRoutes.grok.provider, "gpt");
   assert.equal(run.options.team[1].fallback, undefined);
@@ -437,13 +438,13 @@ async function checkAutomaticPool({ application, page, projectId, checks }) {
     "Explicit native Cursor UI approval permits exactly the intended UI request, with real Node verification and explicitly selected advanced mutation flow completing afterward",
   );
 }
-async function waitForRun(page, projectId, request, status) {
+async function waitForRun(page, projectId, request, status, settled = () => true) {
   const deadline = Date.now() + 60000;
   let state;
   while (Date.now() < deadline) {
     state = (await page.evaluate((id) => window.tower.workflow(id), projectId))
       .value;
-    if (state?.request === request && state.status === status) return state;
+    if (state?.request === request && state.status === status && settled(state)) return state;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   throw new Error(
