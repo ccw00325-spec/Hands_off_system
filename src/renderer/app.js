@@ -2526,7 +2526,10 @@ function closePrerequisites() {
 $('#close-prerequisites').addEventListener('click', closePrerequisites);
 $('#continue-prerequisites').addEventListener('click', closePrerequisites);
 $('#prerequisites-dialog').addEventListener('cancel', event => { event.preventDefault(); closePrerequisites(); });
-$('#open-prerequisites').addEventListener('click', () => busy($('#open-prerequisites'), '확인 중…', async () => showPrerequisites(await call(api.prerequisites()))));
+for (const selector of ['#open-prerequisites', '#open-prerequisites-header']) {
+  const button = $(selector);
+  button.addEventListener('click', () => busy(button, '확인 중…', async () => showPrerequisites(await call(api.prerequisites()))));
+}
 $('#recheck-prerequisites').addEventListener('click', () => busy($('#recheck-prerequisites'), '공구함 확인 중…', async () => showPrerequisites(await call(api.prerequisites()))));
 $('#update-layout').addEventListener('click', () => busy($('#update-layout'), '구조안 정리 중…', async () => { await call(api.reviseLayout(projectData.activeId, $('#image-prompt').value, currentConversation?.id)); renderImage(); }));
 await initialize();

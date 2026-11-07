@@ -59,6 +59,21 @@ try{
  await application.evaluate(()=>globalThis.__hostApproved=true);await page.locator('#save-settings').click();await page.locator('#settings-dialog').waitFor({state:'hidden'});
  const approved=(await page.evaluate(()=>window.tower.preferences())).value;assert.equal(approved.executionBackend,'host');assert.equal(approved.allowExecution,true);
  checks.push('Host execution requires a separate native consent: cancel preserves Docker, explicit approval persists the chosen host setting');
+ const shortcut=page.locator('#open-prerequisites-header');
+ assert.equal(await shortcut.innerText(),'필수 프로그램 설치');
+ for(const width of [1440,1280,900,390]) {
+  await page.setViewportSize({width,height:960});
+  const box=await shortcut.boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=width+1&&box.y>=0&&box.y+box.height<=960);
+ }
+ await page.setViewportSize({width:1440,height:960});
+ await shortcut.click();await page.locator('#prerequisites-dialog[open]').waitFor();
+ assert.match(await page.locator('[data-tool=node]').innerText(),/준비됨/);
+ assert.equal(await page.locator('#settings-dialog').evaluate(el=>el.open),false);
+ await page.locator('#close-prerequisites').click();await page.locator('#prerequisites-dialog').waitFor({state:'hidden'});
+ await shortcut.click();await page.locator('#prerequisites-dialog[open]').waitFor();
+ await page.screenshot({path:join(artifacts,'prerequisites-shortcut.png')});
+ await page.locator('#close-prerequisites').click();
+ checks.push('The top-right prerequisite install shortcut remains visible from 390 to 1440px and reopens the same installation dialog after closing without opening settings');
  await writeFile(join(artifacts,'prerequisites-ui-report.json'),JSON.stringify({passed:checks.length,checks,paidCalls:0},null,2));console.log(JSON.stringify({passed:checks.length,checks,paidCalls:0},null,2));
 }finally{
  await application?.close().catch(()=>{});
