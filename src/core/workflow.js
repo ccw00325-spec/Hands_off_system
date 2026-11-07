@@ -420,6 +420,8 @@ export class Workflow {
     format ??= state.design.format ?? 'image';
     if (!['layout', 'image'].includes(format)) throw new Error('시안 형식을 확인하세요.');
     run.designBusy = true;
+    let settleDesign;
+    run.designSettled = new Promise(resolve => { settleDesign = resolve; });
     state.design = { ...state.design, status: "generating", provider, format };
     const notes = [...state.design.feedback, redact(feedback.trim())].filter(Boolean).slice(-5);
     state.design.feedback = notes;
@@ -449,14 +451,21 @@ export class Workflow {
       throw error;
     } finally {
       run.designBusy = false;
+      settleDesign();
     }
   }
   async approveDesign(projectId, conversationId) {
     const run = this.runs.get(projectId);
+    // A ready preview can reach the renderer while its completion record is
+    // still being persisted. Honor that click after persistence, then recheck
+    // the run/revision rather than rejecting a visibly ready design.
+    if (run?.state.status === 'awaiting_design' && run.state.options.conversationId === conversationId &&
+        run.state.design?.status === 'ready' && run.designBusy) await run.designSettled;
     if (run?.state.status !== "awaiting_design" ||
         run.state.options.conversationId !== conversationId ||
         run.state.design?.status !== "ready" || run.designBusy || !run.acceptDesign)
       throw new Error("현재 대화에서 검토할 시안이 준비될 때까지 기다려 주세요.");
+    run.controller.signal.throwIfAborted();
     run.state.design.status = "approved";
     await this.record(run, "gpt", "승인한 UI 시안과 수정 요청을 반영해 구현을 시작합니다.");
     run.acceptDesign();
