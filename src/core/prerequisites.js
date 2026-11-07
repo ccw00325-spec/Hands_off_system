@@ -52,7 +52,8 @@ export class Prerequisites {
         claude: 'Claude 계정으로 코드 작성·UI 구현·검토 등 배정한 역할을 실행합니다.',
         grok: 'Cursor 계정과 선택한 모델로 코드 작성·디버깅·검토를 실행합니다. Grok 모델도 Cursor가 제공하는 목록에서 선택합니다.',
         gemini: 'Gemini 계정으로 설계·코드 작성·검토 등 배정한 역할을 실행합니다. 이미지 API 연결과는 별개입니다.',
-      })[id] + (providers.includes(id) ? ' 현재 팀에서 사용하므로 설치가 필요합니다.' : ' 현재 팀에서 사용하지 않으므로 선택입니다.'), version: null })),
+      })[id] + (providers.includes(id) ? ' 현재 팀에서 사용하므로 설치가 필요합니다.' : ' 현재 팀에서 사용하지 않으므로 선택입니다.'), version: status?.[id]?.version ?? null,
+      ...(status?.[id]?.installState ? { state: status[id].installState } : {}) })),
     ];
     this.current = { checkedAt: new Date().toISOString(), platform: process.platform, arch: process.arch, rows, needsAttention: rows.some(row => row.required && row.state !== 'ready') };
     return structuredClone(this.current);

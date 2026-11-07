@@ -39,7 +39,7 @@ import { AgentChat } from "./core/agent-chat.js";
 import { AuxiliaryServices } from "./core/services.js";
 import {ModelCatalog} from './core/model-catalog.js';
 import { loadLocalWindow } from './core/window-loader.js';
-import { Prerequisites, INSTALL_SITES } from './core/prerequisites.js';
+import { Prerequisites, INSTALL_SITES, probeTool } from './core/prerequisites.js';
 import { CallQuota } from './core/call-quota.js';
 import { InputNotifications, registerNotificationShortcut, NOTIFICATION_CLSID } from './core/input-notifications.js';
 import { cacheWindowsIcon, windowsTaskbarDetails, windowsAppId } from './core/windows-branding.js';
@@ -96,6 +96,7 @@ let window,
   usage;
 let preferences, conversations, agentChat, auxiliary;
 let prerequisites;
+let prerequisiteScan, prerequisiteSource = 'codex';
 let quota;
 let inputNotifications;
 let restorePromise;
@@ -290,10 +291,30 @@ async function prepareStartup() {
   };
 }
 async function scanPrerequisites(current, settings, projectData) {
+  prerequisiteSource = current.gpt?.source ?? prerequisiteSource;
   const active = projectData.activeId;
   const team = active ? await roles.getTeam(active) : [];
-  const providers = team.length ? [...new Set(team.map(row => row.provider))].filter(id => id !== 'gpt' || !current.gpt.connected || current.gpt.source === 'codex') : undefined;
+  const providers = team.length ? [...new Set(team.map(row => row.provider))].filter(id => id !== 'gpt' || prerequisiteSource !== 'api') : undefined;
   return prerequisites.scan({ ...current, gpt: current.codex }, { providers, executionBackend: settings.executionBackend, dockerImage:settings.dockerImage });
+}
+async function passivePrerequisites(tools) {
+  const finders = { gpt: () => codex.find(), claude: () => claude.executable(), grok: () => grok.connection.find(), gemini: () => gemini.find() };
+  const presence = Object.fromEntries(await Promise.all(Object.entries(finders).map(async ([id, find]) => {
+    const before = prerequisites.current?.rows.find(row => row.id === id);
+    if (id === 'gemini' && gemini.installing) return [id, { installed: false, installState: 'installing' }];
+    if (!tools.includes(id)) return [id, { installed: before?.state !== 'missing', installState: before?.state ?? 'missing', version: before?.version }];
+    const launch = await find();
+    if (!launch) return [id, { installed: false, installState: 'missing' }];
+    const check = await probeTool(typeof launch === 'string' ? launch : launch.executable, [...(launch.prefix ?? []), '--version'], 5000);
+    return [id, { installed: true, installState: check.code === 0 ? 'ready' : 'unknown', version: check.output.match(/\d+\.\d+(?:\.\d+)?/)?.[0] ?? null }];
+  })));
+  const before = prerequisites.current;
+  const result = await scanPrerequisites({ ...presence, codex: presence.gpt, gpt: { source: prerequisiteSource } }, await preferences.get(), await projects.list());
+  for (const id of Object.keys(finders)) if (result.rows.some(row => row.id === id && row.state === 'ready') && before?.rows.find(row => row.id === id)?.state !== 'ready') {
+    const connection = id === 'gpt' ? codex : id === 'grok' ? grok.connection : id === 'claude' ? claude : gemini;
+    connection.cache = null; void refreshCatalog(id, true);
+  }
+  return result;
 }
 async function revealMain() {
   if (!startupPromise) throw new Error("시작 준비를 먼저 완료해야 합니다.");
@@ -730,11 +751,19 @@ else {
         const current=await status();
         return{projects:await projects.list(),preferences:await preferences.get(),restored:{...current,session:{...current.session,firstLaunch:false},browser:await browser.settings()},status:current,catalog:catalog.snapshot(),prerequisites:prerequisites.current};
       });
-      handle('tower:prerequisites', async () => {
+      handle('tower:prerequisites', async (options = {}) => {
+        if (!options || typeof options !== 'object' || Array.isArray(options) || (options.passive !== undefined && typeof options.passive !== 'boolean')) throw new Error('설치 확인 요청을 확인하세요.');
+        if (prerequisiteScan) return prerequisiteScan;
+        const tools = options.tools ?? Object.keys(INSTALL_SITES);
+        if (!Array.isArray(tools) || tools.length > 7 || tools.some(id => !Object.hasOwn(INSTALL_SITES, id))) throw new Error('설치 도구 목록을 확인하세요.');
+        prerequisiteScan = (async () => {
+        if (options.passive) return passivePrerequisites(tools);
         for (const connection of [codex, claude, grok, gemini]) { connection.cache = null; }
         const result = await scanPrerequisites(await status(), await preferences.get(), await projects.list());
         void refreshCatalog(null, true);
         return result;
+        })().finally(() => { prerequisiteScan = null; });
+        return prerequisiteScan;
       });
       handle('tower:call-quota', () => quota.snapshot());
       handle('tower:revise-layout', (id, feedback, conversationId) => workflow.reviseDesign(id, feedback, 'gpt', conversationId, 'layout'));

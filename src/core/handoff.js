@@ -1,4 +1,20 @@
 import { redactData } from './secrets.js';
+// Keep the persisted handoff complete. Only remove exact duplicate long text
+// from the provider-bound copy, with an explicit reference to its canonical field.
+export function compactHandoff(context, handoff) {
+  const result = { ...handoff };
+  for (const [key, field] of [['request', 'request'], ['specification', 'spec']]) {
+    if (typeof context[field] === 'string' && context[field].length >= 128 && context[field] === result[key]) {
+      delete result[key];
+      result[key + 'Ref'] = field;
+    }
+  }
+  if (typeof context.task?.instructions === 'string' && context.task.instructions.length >= 128 && context.task.instructions === result.task?.instructions) {
+    result.task = { ...result.task, instructionsRef: 'task.instructions' };
+    delete result.task.instructions;
+  }
+  return result;
+}
 export function stateHandoff(state, actor, action, context) {
   const task = context.task;
   return redactData({

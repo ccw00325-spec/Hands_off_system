@@ -9,7 +9,7 @@ import { compileFunPlan, skillHash } from "./fun-contract.js";
 import { readFile } from "node:fs/promises";
 import { runMutation } from "./mutation.js";
 import { testPlanMarkdown } from "./test-plan.js";
-import { stateHandoff } from './handoff.js';
+import { stateHandoff, compactHandoff } from './handoff.js';
 import { layoutPreview } from './layout-preview.js';
 import { clarificationQuestions, clarificationAnswers } from './clarifications.js';
 import { reviewOrder, orderDebugTasks, sortReviewAgents } from './review-order.js';
@@ -378,7 +378,7 @@ export class Workflow {
         await this.workspace.write(state.projectId, `.control-tower/runs/${state.id}/handoffs/${sequence}-${actor}-${randomUUID()}.json`, JSON.stringify(handoff, null, 2), {internal:true, grantId:state.grantId, newOnly:true});
       }
       const payload = {
-        ...redactData(rest), handoff, signal, designImage,
+        ...redactData(rest), handoff: compactHandoff(redactData(rest), handoff), signal, designImage,
         snapshot: providerSnapshot(snapshot),
         options: { ...redactData(options), runtimeRoutes: state.options.runtimeRoutes ?? {}, exhaustedProviders: state.options.exhaustedProviders ??= [], cursorUiApproved: state.options.cursorUiApproved ??= [],
           onCursorUiApproved: async key=>{if(!state.options.cursorUiApproved.includes(key))state.options.cursorUiApproved.push(key);},

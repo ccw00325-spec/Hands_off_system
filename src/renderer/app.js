@@ -10,6 +10,7 @@ import { createMission } from "./mission-view.js";
 import { createAgentDesk } from "./agent-desk.js";
 import { createNotifications } from "./notification-view.js";
 import { requestIssues, createRequestAlerts } from './request-readiness.js';
+import { createPrerequisiteWatch } from './prerequisite-watch.js';
 import { displayedTeam } from "./desk-state.js";
 import {createGuide} from './guide.js';
 import { createClarifications } from './clarification-view.js';
@@ -1525,6 +1526,7 @@ document.addEventListener("keydown", () => {
 window.addEventListener("focus", () => {
   void noteActivity();
   void refreshUsage(false);
+  void prerequisiteWatcher.check();
 });
 setInterval(() => {
   if (document.visibilityState === "visible") void refreshUsage(false);
@@ -2471,26 +2473,53 @@ $("#retry-delivery").addEventListener("click", () =>
     }
   }),
 );
+const prerequisiteRows = new Map();
+const prerequisiteWatcher = createPrerequisiteWatch({
+  scan: tools => call(api.prerequisites({ passive: true, tools })),
+  render: renderPrerequisites,
+  becameReady: () => refreshStatus().catch(() => {}),
+  failed: () => { $('#prerequisites-status').textContent = '자동 확인을 다시 시도합니다. ‘설치 후 다시 확인’으로 직접 확인할 수도 있어요.'; },
+  visible: () => $('#prerequisites-dialog').open && !document.hidden,
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void prerequisiteWatcher.check(); });
 function showPrerequisites(report) {
-  const list = $('#prerequisites-list'); list.replaceChildren();
-  $('#prerequisites-status').textContent = `${report.platform} · ${report.arch} · 설치 후 ‘다시 확인’을 눌러 주세요.`;
-  const labels = { ready: '준비됨', missing: '설치 필요', outdated: '24 이상으로 업데이트', unknown: '실행 확인 필요', 'npm-missing': 'npm 설치 확인 필요', 'not-running': 'Docker 엔진 시작 필요', 'image-missing':'격리 이미지 준비 필요' };
+  if (!$('#prerequisites-dialog').open) $('#prerequisites-dialog').showModal();
+  prerequisiteWatcher.open(report);
+}
+function renderPrerequisites(report, { intents, checking }) {
+  const list = $('#prerequisites-list');
+  $('#prerequisites-status').textContent = `${report.platform} · ${report.arch} · ${checking ? '실행 가능 여부 확인 중…' : '설치를 마치면 자동으로 확인해요. 창으로 돌아오면 즉시 다시 확인합니다.'}`;
+  const labels = { ready: '준비됨', missing: '설치 필요', installing: '설치 중…', outdated: '24 이상으로 업데이트', unknown: '실행 확인 필요', 'npm-missing': 'npm 설치 확인 필요', 'not-running': 'Docker 설치됨 · 엔진 시작 필요', 'image-missing':'엔진 준비됨 · 격리 이미지 준비 필요' };
   for (const row of report.rows) {
+    const known = prerequisiteRows.get(row.id);
+    let view = known;
+    if (!view) {
     const item = document.createElement('div'); item.className = 'prerequisite-row'; item.dataset.tool = row.id;
-    const title = document.createElement('div'); title.textContent = row.label;
-    const purpose = document.createElement('small'); purpose.textContent = row.purpose; title.append(purpose);
-    const state = document.createElement('div'); state.className = 'prerequisite-state'; state.dataset.ready = String(row.state === 'ready');
-    const badge = document.createElement('span'); badge.className = 'prerequisite-badge'; badge.dataset.required = String(row.required); badge.textContent = row.required ? '필수' : '선택';
-    const stateText = document.createElement('span'); stateText.textContent = (labels[row.state] ?? '확인 필요') + (row.version ? ` · ${row.version}` : ''); state.append(stateText);
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = row.state === 'ready' ? '공식 안내' : '설치 안내 열기';
-    button.addEventListener('click', () => busy(button, '여는 중…', () => call(api.openInstallSite(row.id))));
+    const title = document.createElement('div'), name = document.createElement('span'), purpose = document.createElement('small'); purpose.className = 'prerequisite-purpose'; title.append(name, purpose);
+    const state = document.createElement('div'); state.className = 'prerequisite-state';
+    const badge = document.createElement('span'); badge.className = 'prerequisite-badge';
+    const stateText = document.createElement('span'), progress = document.createElement('small'); progress.setAttribute('role', 'status'); state.append(stateText, progress);
+    const button = document.createElement('button'); button.type = 'button';
+    button.addEventListener('click', () => busy(button, '여는 중…', () => item.dataset.state === 'ready'
+      ? call(api.openInstallSite(row.id)) : prerequisiteWatcher.installing(row.id, () => call(api.openInstallSite(row.id)))));
     const actions = document.createElement('div'); actions.className = 'prerequisite-actions'; actions.append(badge, button);
     item.append(title, state, actions); list.append(item);
+    view = { item, name, purpose, state, badge, stateText, progress, button }; prerequisiteRows.set(row.id, view);
+    }
+    view.item.dataset.state = row.state; view.name.textContent = row.label; view.purpose.textContent = row.purpose;
+    view.state.dataset.ready = String(row.state === 'ready'); view.badge.dataset.required = String(row.required); view.badge.textContent = row.required ? '필수' : '선택';
+    const phase = intents.get(row.id);
+    view.stateText.textContent = (labels[row.state] ?? '확인 필요') + (row.version ? ` · ${row.version}` : '');
+    view.progress.textContent = row.state === 'ready' ? '' : phase === 'opening' ? '설치 안내 여는 중…'
+      : checking && (row.required || phase) ? '설치·실행 확인 중…' : phase ? '다운로드·설치 대기 중 · 완료 여부 자동 확인' : '';
+    view.progress.hidden = !view.progress.textContent;
+    if (!view.button.disabled) view.button.textContent = row.state === 'ready' ? '공식 안내' : '설치 안내 열기';
   }
+  for (const [id, view] of prerequisiteRows) if (!report.rows.some(row => row.id === id)) { view.item.remove(); prerequisiteRows.delete(id); }
   $('#continue-prerequisites').textContent = report.needsAttention ? '나중에 준비하고 둘러보기' : '준비 완료 · 시작하기';
-  if (!$('#prerequisites-dialog').open) $('#prerequisites-dialog').showModal();
 }
 function closePrerequisites() {
+  prerequisiteWatcher.close();
   sessionStorage.setItem('tower-setup-seen', '1'); $('#prerequisites-dialog').close();
   if (!localStorage.getItem('tower-tour-v1')) startTour();
 }
